@@ -40,6 +40,185 @@ Barter 是一个用于构建高性能实盘交易、模拟交易和回测系统�
 -   **Barter-Execution**：流式传输私有账户数据并执行订单。通过 `ExecutionClient` 接口易于扩展。
 -   **Barter-Integration**：用于灵活 REST/WebSocket 集成的底层框架。
 
+## 系统架构
+
+### 模块架构图
+
+```mermaid
+graph TB
+    subgraph "Barter 生态系统"
+        Barter[barter<br/>核心交易引擎]
+        BarterData[barter-data<br/>市场数据流]
+        BarterExec[barter-execution<br/>订单执行]
+        BarterInst[barter-instrument<br/>交易工具]
+        BarterInt[barter-integration<br/>底层集成框架]
+    end
+
+    Barter --> BarterData
+    Barter --> BarterExec
+    Barter --> BarterInst
+    Barter --> BarterInt
+    BarterData --> BarterInt
+    BarterExec --> BarterInt
+    BarterInst --> BarterInt
+
+    style Barter fill:#ff6b6b,stroke:#c92a2a,stroke-width:3px,color:#fff
+    style BarterData fill:#4ecdc4,stroke:#087f5b,stroke-width:2px
+    style BarterExec fill:#45b7d1,stroke:#0c8599,stroke-width:2px
+    style BarterInst fill:#96ceb4,stroke:#2f9e44,stroke-width:2px
+    style BarterInt fill:#ffeaa7,stroke:#f59f00,stroke-width:2px
+```
+
+### 核心组件架构
+
+```mermaid
+graph LR
+    subgraph "System 交易系统"
+        System[System<br/>系统管理器]
+        Engine[Engine<br/>交易引擎]
+        ExecMgr[ExecutionManager<br/>执行管理器]
+    end
+
+    subgraph "Engine 核心组件"
+        EngineState[EngineState<br/>引擎状态]
+        Strategy[Strategy<br/>交易策略]
+        RiskMgr[RiskManager<br/>风险管理器]
+        Clock[EngineClock<br/>时间接口]
+    end
+
+    subgraph "数据流"
+        MarketStream[MarketStream<br/>市场数据流]
+        AccountStream[AccountStream<br/>账户事件流]
+        AuditStream[AuditStream<br/>审计流]
+    end
+
+    subgraph "外部接口"
+        Exchange[交易所<br/>Exchange]
+        UI[外部进程<br/>UI/Telegram]
+    end
+
+    System --> Engine
+    System --> ExecMgr
+    Engine --> EngineState
+    Engine --> Strategy
+    Engine --> RiskMgr
+    Engine --> Clock
+
+    MarketStream --> Engine
+    AccountStream --> Engine
+    Engine --> AuditStream
+
+    ExecMgr --> Exchange
+    UI --> System
+
+    style Engine fill:#ff6b6b,stroke:#c92a2a,stroke-width:3px,color:#fff
+    style EngineState fill:#4ecdc4,stroke:#087f5b,stroke-width:2px
+    style Strategy fill:#45b7d1,stroke:#0c8599,stroke-width:2px
+    style RiskMgr fill:#96ceb4,stroke:#2f9e44,stroke-width:2px
+```
+
+### 数据流程图
+
+```mermaid
+sequenceDiagram
+    participant Exchange as 交易所
+    participant MarketStream as 市场数据流
+    participant AccountStream as 账户事件流
+    participant Engine as Engine
+    participant Strategy as Strategy
+    participant RiskMgr as RiskManager
+    participant ExecMgr as ExecutionManager
+    participant AuditStream as 审计流
+
+    Exchange->>MarketStream: 市场数据<br/>(价格/订单簿)
+    Exchange->>AccountStream: 账户事件<br/>(余额/订单/交易)
+
+    MarketStream->>Engine: MarketEvent
+    AccountStream->>Engine: AccountEvent
+
+    Note over Engine: 更新 EngineState
+
+    alt TradingState::Enabled
+        Engine->>Strategy: 生成算法订单
+        Strategy-->>Engine: OrderRequest
+
+        Engine->>RiskMgr: 风险检查
+        RiskMgr-->>Engine: RiskApproved/RiskRefused
+
+        Engine->>ExecMgr: ExecutionRequest
+        ExecMgr->>Exchange: 发送订单
+
+        Exchange-->>ExecMgr: 订单确认
+        ExecMgr->>AccountStream: 账户更新
+    end
+
+    Engine->>AuditStream: AuditTick<br/>(审计信息)
+```
+
+### Engine 内部工作流程
+
+```mermaid
+flowchart TD
+    Start([事件接收]) --> EventType{事件类型}
+
+    EventType -->|MarketEvent| UpdateMarket[更新市场数据]
+    EventType -->|AccountEvent| UpdateAccount[更新账户状态]
+    EventType -->|Command| ExecuteCommand[执行命令]
+    EventType -->|TradingStateUpdate| UpdateTradingState[更新交易状态]
+    EventType -->|Shutdown| Shutdown[关闭引擎]
+
+    UpdateMarket --> UpdateState[更新 EngineState]
+    UpdateAccount --> UpdateState
+    ExecuteCommand --> UpdateState
+    UpdateTradingState --> CheckTradingState{交易状态}
+
+    UpdateState --> CheckTradingState
+    CheckTradingState -->|Enabled| GenerateOrders[Strategy 生成订单]
+    CheckTradingState -->|Disabled| Audit[生成审计信息]
+
+    GenerateOrders --> RiskCheck[RiskManager 风险检查]
+    RiskCheck -->|通过| SendOrders[发送订单到 ExecutionManager]
+    RiskCheck -->|拒绝| LogRefused[记录拒绝原因]
+
+    SendOrders --> Audit
+    LogRefused --> Audit
+    Audit --> End([完成])
+    Shutdown --> End
+
+    style Start fill:#4ecdc4,stroke:#087f5b,stroke-width:2px
+    style GenerateOrders fill:#45b7d1,stroke:#0c8599,stroke-width:2px
+    style RiskCheck fill:#96ceb4,stroke:#2f9e44,stroke-width:2px
+    style Audit fill:#ffeaa7,stroke:#f59f00,stroke-width:2px
+    style End fill:#ff6b6b,stroke:#c92a2a,stroke-width:2px
+```
+
+### EngineState 状态结构
+
+```mermaid
+graph TD
+    EngineState[EngineState<br/>引擎状态] --> TradingState[TradingState<br/>交易状态<br/>Enabled/Disabled]
+    EngineState --> GlobalData[GlobalData<br/>全局数据<br/>用户自定义]
+    EngineState --> Connectivity[ConnectivityStates<br/>连接状态<br/>健康检查]
+    EngineState --> Assets[AssetStates<br/>资产状态<br/>常量时间索引查找]
+    EngineState --> Instruments[InstrumentStates<br/>交易对状态<br/>常量时间索引查找]
+
+    Assets --> Asset1[Asset: BTC]
+    Assets --> Asset2[Asset: USDT]
+    Assets --> AssetN[Asset: ...]
+
+    Instruments --> Inst1[Instrument: BTC/USDT]
+    Instruments --> Inst2[Instrument: ETH/USDT]
+    Instruments --> InstN[Instrument: ...]
+
+    Inst1 --> Position1[Position<br/>持仓信息]
+    Inst1 --> Order1[OrderManager<br/>订单管理]
+    Inst1 --> MarketData1[MarketData<br/>市场数据]
+
+    style EngineState fill:#ff6b6b,stroke:#c92a2a,stroke-width:3px,color:#fff
+    style Assets fill:#4ecdc4,stroke:#087f5b,stroke-width:2px
+    style Instruments fill:#45b7d1,stroke:#0c8599,stroke-width:2px
+```
+
 ## 主要特性
 
 -   通过 [`Barter-Data`] 库从金融场所流式传输公共市场数据。
