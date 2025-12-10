@@ -1,7 +1,22 @@
-/// Backtesting utilities for algorithmic trading strategies.
-///
-/// This module provides tools for running historical simulations of trading strategies
-/// using market data, and analyzing the performance of these simulations.
+//! Backtest 回测模块
+//!
+//! 本模块提供了用于算法交易策略的回测工具。
+//! 它提供了使用市场数据运行交易策略的历史模拟，并分析这些模拟的绩效。
+//!
+//! # 核心概念
+//!
+//! - **Backtest**: 单个回测，使用历史数据模拟策略
+//! - **BacktestMarketData**: 回测市场数据接口
+//! - **BacktestSummary**: 回测结果摘要
+//! - **MultiBacktestSummary**: 多个回测的汇总结果
+//!
+//! # 使用场景
+//!
+//! - 策略参数优化
+//! - 策略绩效评估
+//! - 批量回测多个策略变体
+//! - 历史数据验证
+
 use crate::{
     backtest::{
         market_data::BacktestMarketData,
@@ -35,49 +50,82 @@ use rust_decimal::Decimal;
 use smol_str::SmolStr;
 use std::{fmt::Debug, sync::Arc};
 
-/// Defines the interface and implementations for different types of market data sources
-/// that can be used in backtests.
+/// 定义可用于回测的不同类型市场数据源的接口和实现。
 pub mod market_data;
 
-/// Contains data structures for representing backtest results and metrics.
+/// 包含用于表示回测结果和指标的数据结构。
 pub mod summary;
 
-/// Configuration for constants used across all backtests in a batch.
+/// 批次中所有回测使用的常量配置。
 ///
-/// Contains shared inputs like instruments, execution configurations,
-/// market data, and summary time intervals.
+/// 包含共享输入，如交易对、执行配置、市场数据和摘要时间间隔。
+///
+/// ## 类型参数
+///
+/// - `MarketData`: 市场数据类型
+/// - `SummaryInterval`: 摘要时间间隔类型
+/// - `State`: EngineState 类型
 #[derive(Debug, Clone)]
 pub struct BacktestArgsConstant<MarketData, SummaryInterval, State> {
-    /// Set of trading instruments indexed by unique identifiers.
+    /// 由唯一标识符索引的交易对集合。
     pub instruments: IndexedInstruments,
-    /// Exchange execution configurations.
+    /// 交易所执行配置。
     pub executions: Vec<ExecutionConfig>,
-    /// Historical market data to use for simulation.
+    /// 用于模拟的历史市场数据。
     pub market_data: MarketData,
-    /// Time interval for aggregating and reporting summary statistics.
+    /// 用于聚合和报告摘要统计的时间间隔。
     pub summary_interval: SummaryInterval,
-    /// EngineState.
+    /// EngineState。
     pub engine_state: State,
 }
 
-/// Configuration for variables that can change between individual backtests.
+/// 可在各个回测之间变化的变量配置。
 ///
-/// Contains parameters that define a specific strategy variant to test.
+/// 包含定义要测试的特定策略变体的参数。
+///
+/// ## 类型参数
+///
+/// - `Strategy`: 策略类型
+/// - `Risk`: 风险管理类型
 #[derive(Debug, Clone)]
 pub struct BacktestArgsDynamic<Strategy, Risk> {
-    /// Unique identifier for this backtest.
+    /// 此回测的唯一标识符。
     pub id: SmolStr,
-    /// Risk-free return rate used for performance metrics.
+    /// 用于绩效指标的无风险收益率。
     pub risk_free_return: Decimal,
-    /// Trading strategy to backtest.
+    /// 要回测的交易策略。
     pub strategy: Strategy,
-    /// Risk management rules.
+    /// 风险管理规则。
     pub risk: Risk,
 }
-/// Run multiple backtests concurrently, each with different strategy parameters.
+/// 并发运行多个回测，每个回测使用不同的策略参数。
 ///
-/// Takes the shared constants and an iterator of different strategy configurations,
-/// then executes all backtests in parallel, collecting the results.
+/// 接受共享常量和不同策略配置的迭代器，然后并行执行所有回测，收集结果。
+///
+/// ## 工作流程
+///
+/// 1. 为每个策略配置创建回测任务
+/// 2. 并发执行所有回测
+/// 3. 收集所有回测结果
+/// 4. 返回汇总结果
+///
+/// ## 类型参数
+///
+/// - `MarketData`: 市场数据类型，必须实现 `BacktestMarketData`
+/// - `SummaryInterval`: 摘要时间间隔类型
+/// - `Strategy`: 策略类型，必须实现多个策略 Trait
+/// - `Risk`: 风险管理类型
+/// - `GlobalData`: 全局数据类型
+/// - `InstrumentData`: 交易对数据类型
+///
+/// # 参数
+///
+/// - `args_constant`: 共享的常量配置
+/// - `args_dynamic_iter`: 动态配置的迭代器
+///
+/// # 返回值
+///
+/// 返回包含所有回测结果的 `MultiBacktestSummary`。
 pub async fn run_backtests<
     MarketData,
     SummaryInterval,
@@ -132,11 +180,12 @@ where
 {
     let time_start = std::time::Instant::now();
 
+    // 为每个动态配置创建回测 Future
     let backtest_futures = args_dynamic_iter
         .into_iter()
         .map(|args_dynamic| backtest(Arc::clone(&args_constant), args_dynamic));
 
-    // Run all backtests concurrently
+    // 并发运行所有回测
     let summaries = try_join_all(backtest_futures).await?;
 
     Ok(MultiBacktestSummary::new(
@@ -145,9 +194,36 @@ where
     ))
 }
 
-/// Run a single backtest with the given parameters.
+/// 使用给定参数运行单个回测。
 ///
-/// Simulates a trading strategy using historical market data and generates performance metrics.
+/// 使用历史市场数据模拟交易策略并生成绩效指标。
+///
+/// ## 工作流程
+///
+/// 1. 从市场数据创建历史时钟
+/// 2. 创建市场数据流
+/// 3. 构建执行基础设施
+/// 4. 创建 Engine 和 System
+/// 5. 运行回测直到结束
+/// 6. 生成交易摘要
+///
+/// ## 类型参数
+///
+/// - `MarketData`: 市场数据类型，必须实现 `BacktestMarketData`
+/// - `SummaryInterval`: 摘要时间间隔类型
+/// - `Strategy`: 策略类型，必须实现多个策略 Trait
+/// - `Risk`: 风险管理类型
+/// - `GlobalData`: 全局数据类型
+/// - `InstrumentData`: 交易对数据类型
+///
+/// # 参数
+///
+/// - `args_constant`: 共享的常量配置
+/// - `args_dynamic`: 动态配置
+///
+/// # 返回值
+///
+/// 返回包含回测结果的 `BacktestSummary`。
 pub async fn backtest<MarketData, SummaryInterval, Strategy, Risk, GlobalData, InstrumentData>(
     args_constant: Arc<
         BacktestArgsConstant<MarketData, SummaryInterval, EngineState<GlobalData, InstrumentData>>,
@@ -193,14 +269,16 @@ where
         + 'static,
     InstrumentData: InstrumentDataState + Send + 'static,
 {
+    // 从市场数据获取第一个事件时间并创建历史时钟
     let clock = args_constant
         .market_data
         .time_first_event()
         .await
         .map(HistoricalClock::new)?;
+    // 创建市场数据流
     let market_stream = args_constant.market_data.stream().await?;
 
-    // Build Execution infrastructure
+    // 构建执行基础设施
     let ExecutionBuild {
         execution_tx_map,
         account_channel,
@@ -217,6 +295,7 @@ where
         )?
         .build();
 
+    // 创建 Engine
     let engine = Engine::new(
         clock,
         args_constant.engine_state.clone(),
@@ -225,6 +304,7 @@ where
         args_dynamic.risk,
     );
 
+    // 创建并初始化 System
     let system = SystemBuild::new(
         engine,
         EngineFeedMode::Stream,
@@ -236,8 +316,10 @@ where
     .init()
     .await?;
 
+    // 运行回测直到结束
     let (engine, _shutdown_audit) = system.shutdown_after_backtest().await?;
 
+    // 生成交易摘要
     let trading_summary = engine
         .trading_summary_generator(args_dynamic.risk_free_return)
         .generate(args_constant.summary_interval);

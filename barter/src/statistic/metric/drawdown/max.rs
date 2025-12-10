@@ -1,36 +1,73 @@
+//! Max Drawdown 最大回撤模块
+//!
+//! 本模块提供了 Max Drawdown（最大回撤）的计算逻辑。
+//! 最大回撤是 PnL（投资组合、策略、交易对）或资产余额的最大峰值到谷值下降。
+//!
+//! # 核心概念
+//!
+//! - **MaxDrawdown**: 最大回撤值，包装了 Drawdown
+//! - **MaxDrawdownGenerator**: 最大回撤生成器，跟踪所有回撤并找出最大值
+//!
+//! # 参考文档
+//!
+//! <https://www.investopedia.com/terms/m/maximum-drawdown-mdd.asp>
+
 use crate::statistic::metric::drawdown::Drawdown;
 use derive_more::Constructor;
 use serde::{Deserialize, Serialize};
 
-/// [`MaxDrawdown`] is the largest peak-to-trough decline of PnL (Portfolio, Strategy, Instrument),
-/// or asset balance.
+/// [`MaxDrawdown`] 是 PnL（投资组合、策略、交易对）或资产余额的最大峰值到谷值下降。
 ///
-/// Max Drawdown is a measure of downside risk, with larger values indicating downside movements
-/// could be volatile.
+/// 最大回撤是衡量下行风险的指标，较大的值表示下行波动可能较大。
 ///
-/// See documentation: <https://www.investopedia.com/terms/m/maximum-drawdown-mdd.asp>
+/// ## 解释
+///
+/// - **较大的 Max Drawdown**: 表示策略可能经历较大的价值下降
+/// - **较小的 Max Drawdown**: 表示策略相对稳定
+///
+/// ## 参考文档
+///
+/// <https://www.investopedia.com/terms/m/maximum-drawdown-mdd.asp>
 #[derive(Debug, Clone, PartialEq, PartialOrd, Default, Deserialize, Serialize, Constructor)]
 pub struct MaxDrawdown(pub Drawdown);
 
-/// [`MaxDrawdown`] generator.
+/// [`MaxDrawdown`] 生成器。
+///
+/// MaxDrawdownGenerator 跟踪所有回撤并维护最大回撤值。
+/// 当新的回撤大于当前最大回撤时，会替换它。
 #[derive(Debug, Clone, PartialEq, PartialOrd, Default, Deserialize, Serialize, Constructor)]
 pub struct MaxDrawdownGenerator {
+    /// 当前最大回撤（可选）。
     pub max: Option<MaxDrawdown>,
 }
 
 impl MaxDrawdownGenerator {
-    /// Initialise a [`MaxDrawdownGenerator`] from an initial [`Drawdown`].
+    /// 从初始 [`Drawdown`] 初始化 [`MaxDrawdownGenerator`]。
+    ///
+    /// # 参数
+    ///
+    /// - `drawdown`: 初始回撤
+    ///
+    /// # 返回值
+    ///
+    /// 返回新创建的 MaxDrawdownGenerator 实例。
     pub fn init(drawdown: Drawdown) -> Self {
         Self {
             max: Some(MaxDrawdown(drawdown)),
         }
     }
 
-    /// Updates the internal [`MaxDrawdown`] using the latest next [`Drawdown`]. If the next
-    /// drawdown is larger than the current [`MaxDrawdown`], it supersedes it.
+    /// 使用最新的下一个 [`Drawdown`] 更新内部 [`MaxDrawdown`]。
+    ///
+    /// 如果下一个回撤大于当前的 [`MaxDrawdown`]，则替换它。
+    ///
+    /// # 参数
+    ///
+    /// - `next_drawdown`: 下一个回撤
     pub fn update(&mut self, next_drawdown: &Drawdown) {
         let max = match self.max.take() {
             Some(current) => {
+                // 比较回撤的绝对值
                 if next_drawdown.value.abs() > current.0.value.abs() {
                     MaxDrawdown(next_drawdown.clone())
                 } else {
@@ -43,7 +80,11 @@ impl MaxDrawdownGenerator {
         self.max = Some(max);
     }
 
-    /// Generate the current [`MaxDrawdown`], if one exists.
+    /// 生成当前的 [`MaxDrawdown`]（如果存在）。
+    ///
+    /// # 返回值
+    ///
+    /// 返回当前最大回撤，如果不存在则返回 `None`。
     pub fn generate(&self) -> Option<MaxDrawdown> {
         self.max.clone()
     }

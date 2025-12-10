@@ -1,3 +1,14 @@
+//! ExecutionBuilder 执行构建器模块
+//!
+//! 本模块提供了执行基础设施的构建器，用于方便地初始化多个执行链接到模拟和真实交易所。
+//! ExecutionBuilder 支持添加模拟和真实交易所配置，并自动设置所需的基础设施。
+//!
+//! # 核心概念
+//!
+//! - **ExecutionBuilder**: 执行基础设施构建器
+//! - **ExecutionBuild**: 已构建的执行基础设施容器
+//! - **ExecutionHandles**: 执行组件任务句柄集合
+
 use crate::{
     engine::{clock::EngineClock, execution_tx::MultiExchangeTxMap},
     error::BarterError,
@@ -45,31 +56,60 @@ type ExecutionInitFuture =
     Pin<Box<dyn Future<Output = Result<(RunFuture, RunFuture), ExecutionError>> + Send>>;
 type RunFuture = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
 
-/// Full execution infrastructure builder.
+/// 完整的执行基础设施构建器。
 ///
-/// Add Mock and Live [`ExecutionClient`] configurations and let the builder set up the required
-/// infrastructure.
+/// 添加模拟和真实 [`ExecutionClient`] 配置，让构建器设置所需的基础设施。
 ///
-/// Once you have added all the configurations, call [`ExecutionBuilder::build`] to return the
-/// full [`ExecutionBuild`]. Then calling [`ExecutionBuild::init`] will then initialise
-/// the built infrastructure.
+/// 添加所有配置后，调用 [`ExecutionBuilder::build`] 返回完整的 [`ExecutionBuild`]。
+/// 然后调用 [`ExecutionBuild::init`] 将初始化已构建的基础设施。
 ///
-/// Handles:
-/// - Building mock execution managers (mocks a specific exchange internally via the [`MockExchange`]).
-/// - Building live execution managers, setting up an external connection to each exchange.
-/// - Constructs a [`MultiExchangeTxMap`] with an entry for each mock/live execution manager.
-/// - Combines all exchange account streams into a unified [`AccountStreamEvent`] `Stream`.
+/// ## 处理的功能
+///
+/// - 构建模拟执行管理器（通过 [`MockExchange`] 在内部模拟特定交易所）
+/// - 构建真实执行管理器，设置到每个交易所的外部连接
+/// - 构建 [`MultiExchangeTxMap`]，为每个模拟/真实执行管理器添加条目
+/// - 将所有交易所账户流合并为统一的 [`AccountStreamEvent`] `Stream`
+///
+/// ## 使用流程
+///
+/// 1. 创建 ExecutionBuilder
+/// 2. 添加模拟或真实交易所配置
+/// 3. 调用 `build()` 构建基础设施
+/// 4. 调用 `init()` 初始化所有组件
+///
+/// # 使用示例
+///
+/// ```rust,ignore
+/// let builder = ExecutionBuilder::new(&instruments)
+///     .add_mock(mock_config, clock)?
+///     .add_live::<BinanceClient>(binance_config, timeout)?;
+///
+/// let execution = builder.build().init().await?;
+/// ```
 #[allow(missing_debug_implementations)]
 pub struct ExecutionBuilder<'a> {
+    /// 索引化交易对集合。
     instruments: &'a IndexedInstruments,
+    /// 执行请求通道映射（交易所 ID -> (交易所索引, 请求发送器)）。
     execution_txs: FnvHashMap<ExchangeId, (ExchangeIndex, UnboundedTx<ExecutionRequest>)>,
+    /// 合并的账户事件通道。
     merged_channel: Channel<AccountStreamEvent<ExchangeIndex, AssetIndex, InstrumentIndex>>,
+    /// MockExchange 运行 Future 集合。
     mock_exchange_futures: Vec<RunFuture>,
+    /// 执行管理器初始化 Future 集合。
     execution_init_futures: Vec<ExecutionInitFuture>,
 }
 
 impl<'a> ExecutionBuilder<'a> {
-    /// Construct a new `ExecutionBuilder` using the provided `IndexedInstruments`.
+    /// 使用提供的 `IndexedInstruments` 构造新的 `ExecutionBuilder`。
+    ///
+    /// # 参数
+    ///
+    /// - `instruments`: 索引化交易对集合
+    ///
+    /// # 返回值
+    ///
+    /// 返回新创建的 ExecutionBuilder 实例。
     pub fn new(instruments: &'a IndexedInstruments) -> Self {
         Self {
             instruments,
@@ -80,11 +120,23 @@ impl<'a> ExecutionBuilder<'a> {
         }
     }
 
-    /// Adds an [`ExecutionManager`] for a mocked exchange, setting up a [`MockExchange`]
-    /// internally.
+    /// 为模拟交易所添加 [`ExecutionManager`，在内部设置 [`MockExchange`]。
     ///
-    /// The provided [`MockExecutionConfig`] is used to configure the [`MockExchange`] and provide
-    /// the initial account state.
+    /// 此方法添加一个模拟交易所的执行管理器。提供的 [`MockExecutionConfig`] 用于配置
+    /// [`MockExchange`] 并提供初始账户状态。
+    ///
+    /// ## 类型参数
+    ///
+    /// - `Clock`: Engine 时钟类型
+    ///
+    /// # 参数
+    ///
+    /// - `config`: 模拟执行配置
+    /// - `clock`: Engine 时钟
+    ///
+    /// # 返回值
+    ///
+    /// 返回更新后的 ExecutionBuilder，如果配置无效则返回错误。
     pub fn add_mock<Clock>(
         mut self,
         config: MockExecutionConfig,
@@ -128,7 +180,22 @@ impl<'a> ExecutionBuilder<'a> {
         Box::pin(MockExchange::new(config, request_rx, event_tx, instruments).run())
     }
 
-    /// Adds an [`ExecutionManager`] for a live exchange.
+    /// 为真实交易所添加 [`ExecutionManager`]。
+    ///
+    /// 此方法添加一个真实交易所的执行管理器，设置到交易所的外部连接。
+    ///
+    /// ## 类型参数
+    ///
+    /// - `Client`: 执行客户端类型
+    ///
+    /// # 参数
+    ///
+    /// - `config`: 客户端配置
+    /// - `request_timeout`: 请求超时时间
+    ///
+    /// # 返回值
+    ///
+    /// 返回更新后的 ExecutionBuilder，如果配置无效则返回错误。
     pub fn add_live<Client>(
         self,
         config: Client::Config,
@@ -192,13 +259,22 @@ impl<'a> ExecutionBuilder<'a> {
         Ok(self)
     }
 
-    /// Consume this `ExecutionBuilder` and build a full [`ExecutionBuild`] containing all the
-    /// [`ExecutionManager`] (mock & live) and [`MockExchange`] futures.
+    /// 消费此 `ExecutionBuilder` 并构建包含所有 [`ExecutionManager`]（模拟和真实）
+    /// 和 [`MockExchange`] Future 的完整 [`ExecutionBuild`]。
     ///
-    /// **For most users, calling [`ExecutionBuild::init`] after this is satisfactory.**
+    /// **对于大多数用户，在此之后调用 [`ExecutionBuild::init`] 就足够了。**
     ///
-    /// If you want more control over what runtime drives the futures to completion, you can
-    /// call [`ExecutionBuild::init_with_runtime`].
+    /// 如果你想要更多控制哪个运行时驱动 Future 完成，可以调用 [`ExecutionBuild::init_with_runtime`]。
+    ///
+    /// ## 构建流程
+    ///
+    /// 1. 构建索引化的 ExecutionTx 映射
+    /// 2. 收集所有执行管理器初始化 Future
+    /// 3. 返回 ExecutionBuild 容器
+    ///
+    /// # 返回值
+    ///
+    /// 返回包含所有执行基础设施组件的 ExecutionBuild。
     pub fn build(mut self) -> ExecutionBuild {
         // Construct indexed ExecutionTx map
         let execution_tx_map = self
@@ -234,37 +310,57 @@ impl<'a> ExecutionBuilder<'a> {
     }
 }
 
-/// Container holding execution infrastructure components ready to be initialised.
+/// 包含准备初始化的执行基础设施组件的容器。
 ///
-/// Call [`ExecutionBuild::init`] to run all the required execution component futures on tokio
-/// tasks - returns the [`MultiExchangeTxMap`] and multi-exchange [`AccountStreamEvent`] stream.
+/// 调用 [`ExecutionBuild::init`] 在 tokio 任务上运行所有必需的执行组件 Future -
+/// 返回 [`MultiExchangeTxMap`] 和多交易所 [`AccountStreamEvent`] 流。
+///
+/// ## 字段说明
+///
+/// - **execution_tx_map**: 多交易所执行请求通道映射
+/// - **account_channel**: 合并的账户事件通道
+/// - **futures**: 执行组件 Future 集合
 #[allow(missing_debug_implementations)]
 pub struct ExecutionBuild {
+    /// 多交易所执行请求通道映射。
     pub execution_tx_map: MultiExchangeTxMap,
+    /// 合并的账户事件通道。
     pub account_channel: Channel<AccountStreamEvent>,
+    /// 执行组件 Future 集合。
     pub futures: ExecutionBuildFutures,
 }
 
 impl ExecutionBuild {
-    /// Initialises all execution components on the current tokio runtime.
+    /// 在当前 tokio 运行时上初始化所有执行组件。
     ///
-    /// This method:
-    /// - Spawns [`MockExchange`] runners tokio tasks.
-    /// - Initialises all [`ExecutionManager`]s and their AccountStreams.
-    /// - Returns the `MultiExchangeTxMap` and multi-exchange AccountStream.
+    /// 此方法：
+    /// - 生成 [`MockExchange`] 运行器 tokio 任务
+    /// - 初始化所有 [`ExecutionManager`] 及其 AccountStream
+    /// - 返回 `MultiExchangeTxMap` 和多交易所 AccountStream
+    ///
+    /// # 返回值
+    ///
+    /// 返回初始化的 Execution 实例，如果初始化失败则返回错误。
     pub async fn init(self) -> Result<Execution, BarterError> {
         self.init_internal(tokio::runtime::Handle::current()).await
     }
 
-    /// Initialises all execution components on the provided tokio runtime.
+    /// 在提供的 tokio 运行时上初始化所有执行组件。
     ///
-    /// Use this method if you want more control over which tokio runtime handles running
-    /// execution components.
+    /// 如果你想要更多控制哪个 tokio 运行时处理运行执行组件，请使用此方法。
     ///
-    /// This method:
-    /// - Spawns [`MockExchange`] runners tokio tasks.
-    /// - Initialises all [`ExecutionManager`]s and their AccountStreams.
-    /// - Returns the `MultiExchangeTxMap` and multi-exchange AccountStream.
+    /// 此方法：
+    /// - 生成 [`MockExchange`] 运行器 tokio 任务
+    /// - 初始化所有 [`ExecutionManager`] 及其 AccountStream
+    /// - 返回 `MultiExchangeTxMap` 和多交易所 AccountStream
+    ///
+    /// # 参数
+    ///
+    /// - `runtime`: tokio 运行时句柄
+    ///
+    /// # 返回值
+    ///
+    /// 返回初始化的 Execution 实例，如果初始化失败则返回错误。
     pub async fn init_with_runtime(
         self,
         runtime: tokio::runtime::Handle,

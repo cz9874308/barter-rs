@@ -1,3 +1,14 @@
+//! ExecutionManager 执行管理器模块
+//!
+//! 本模块定义了每个交易所的执行管理器，负责处理来自 Engine 的订单请求并转发响应。
+//! ExecutionManager 是 Engine 与交易所之间的桥梁，处理订单执行、账户事件等。
+//!
+//! # 核心概念
+//!
+//! - **ExecutionManager**: 每个交易所的执行管理器
+//! - **工作流程**: 接收请求 → 转换标识符 → 发送到交易所 → 处理响应 → 转发回 Engine
+//! - **超时处理**: 跟踪请求并在超时时返回错误
+
 use crate::execution::{
     AccountStreamEvent,
     error::ExecutionError,
@@ -37,30 +48,43 @@ use futures::{Stream, StreamExt, future::Either, stream::FuturesUnordered};
 use std::sync::Arc;
 use tracing::{error, info, warn};
 
-/// Per-exchange execution manager that actions order requests from the Engine and forwards back
-/// responses.
+/// 每个交易所的执行管理器，处理来自 Engine 的订单请求并转发响应。
 ///
-/// Processes indexed Engine [`ExecutionRequest`]s by:
-/// - Transforming the requests to use the associated exchange's asset and instrument names.
-/// - Issues the request via it's associated exchange [`ExecutionClient`],
-/// - Tracks requests and returns timeouts to the Engine where necessary.
+/// ExecutionManager 处理索引化的 Engine [`ExecutionRequest`]，具体流程：
+/// - 将请求转换为使用关联交易所的资产和交易对名称
+/// - 通过关联交易所的 [`ExecutionClient`] 发出请求
+/// - 跟踪请求并在必要时向 Engine 返回超时
+///
+/// ## 类型参数
+///
+/// - `RequestStream`: 请求流类型
+/// - `Client`: 执行客户端类型
+///
+/// ## 工作流程
+///
+/// 1. 接收来自 Engine 的执行请求
+/// 2. 将索引标识符转换为交易所特定标识符
+/// 3. 通过 ExecutionClient 发送请求到交易所
+/// 4. 跟踪请求并等待响应
+/// 5. 处理响应（成功、错误或超时）
+/// 6. 将响应转换回索引格式并转发回 Engine
 #[derive(Debug, Constructor)]
 pub struct ExecutionManager<RequestStream, Client> {
-    /// `Stream` of incoming Engine [`ExecutionRequest`]s.
+    /// 来自 Engine 的 [`ExecutionRequest`] 流。
     pub request_stream: RequestStream,
 
-    /// Maximum `Duration` to wait for execution request responses from the [`ExecutionClient`].
+    /// 等待 [`ExecutionClient`] 执行请求响应的最大 `Duration`。
     pub request_timeout: std::time::Duration,
 
-    /// Transmitter for sending execution request responses back to the Engine.
+    /// 用于将执行请求响应发送回 Engine 的发送器。
     pub response_tx: UnboundedTx<AccountStreamEvent<ExchangeIndex, AssetIndex, InstrumentIndex>>,
 
-    /// Exchange-specific [`ExecutionClient`] for executing orders.
+    /// 用于执行订单的交易所特定 [`ExecutionClient`]。
     pub client: Arc<Client>,
 
-    /// Mapper for converting between exchange-specific and index identifiers.
+    /// 用于在交易所特定标识符和索引标识符之间转换的映射器。
     ///
-    /// For example, `InstrumentNameExchange` -> `InstrumentIndex`.
+    /// 例如，`InstrumentNameExchange` -> `InstrumentIndex`。
     pub indexer: AccountEventIndexer,
 }
 
@@ -70,9 +94,28 @@ where
     Client: ExecutionClient + Send + Sync,
     Client::AccountStream: Send,
 {
-    /// Initialises a new `ExecutionManager` and it's associated AccountStream.
+    /// 初始化新的 `ExecutionManager` 及其关联的 AccountStream。
     ///
-    /// The first item of the AccountStream will be a full account snapshot.
+    /// 此方法初始化执行管理器并设置账户事件流。AccountStream 的第一项将是完整的账户快照。
+    ///
+    /// ## 初始化流程
+    ///
+    /// 1. 确定账户流键和交易所 ID（用于日志记录）
+    /// 2. 初始化带自动重连的 IndexedAccountStream（快照 + 更新）
+    /// 3. 构建用于与 Engine 通信的通道
+    /// 4. 合并执行响应和账户通知流
+    ///
+    /// # 参数
+    ///
+    /// - `request_stream`: 请求流
+    /// - `request_timeout`: 请求超时时间
+    /// - `client`: 执行客户端
+    /// - `indexer`: 账户事件索引器
+    /// - `reconnect_policy`: 重连退避策略
+    ///
+    /// # 返回值
+    ///
+    /// 返回一个元组，包含 ExecutionManager 实例和合并的账户事件流。
     pub async fn init(
         request_stream: RequestStream,
         request_timeout: std::time::Duration,
@@ -80,7 +123,7 @@ where
         indexer: AccountEventIndexer,
         reconnect_policy: ReconnectionBackoffPolicy,
     ) -> Result<(Self, impl Stream<Item = AccountStreamEvent> + Send), ExecutionError> {
-        // Determine StreamKey & ExchangeId for use in logging
+        // 确定 StreamKey 和 ExchangeId（用于日志记录）
         let stream_key = Self::determine_account_stream_key(&indexer.map)?;
 
         info!(
@@ -91,14 +134,14 @@ where
             "AccountStream with auto reconnect initialising"
         );
 
-        // Initialise reconnecting IndexedAccountStream (snapshot + updates)
+        // 初始化带重连的 IndexedAccountStream（快照 + 更新）
         let client_clone = Arc::clone(&client);
         let indexer_clone = indexer.clone();
         let account_stream = init_reconnecting_stream(move || {
             let client = client_clone.clone();
             let indexer = indexer_clone.clone();
             async move {
-                // Allocate AssetNameExchanges & InstrumentNameExchanges to avoid lifetime issues
+                // 分配 AssetNameExchanges 和 InstrumentNameExchanges 以避免生命周期问题
                 let assets = indexer.map.exchange_assets().cloned().collect::<Vec<_>>();
                 let instruments = indexer
                     .map
@@ -106,7 +149,7 @@ where
                     .cloned()
                     .collect::<Vec<_>>();
 
-                // Initialise AccountStream & apply indexing
+                // 初始化 AccountStream 并应用索引
                 let updates = Self::init_indexed_account_stream(
                     &client,
                     indexer.clone(),
@@ -115,21 +158,21 @@ where
                 )
                 .await?;
 
-                // Fetch AccountSnapshot & index
+                // 获取 AccountSnapshot 并索引
                 let snapshot =
                     Self::fetch_indexed_account_snapshot(&client, &indexer, &assets, &instruments)
                         .await?;
 
-                // It's expected downstream consumers (eg/ EngineState will sync updates)
+                // 预期下游消费者（例如 EngineState）会同步更新
                 Ok(futures::stream::once(std::future::ready(snapshot)).chain(updates))
             }
         })
         .await?;
 
-        // Construct channel to communicate ExecutionRequest responses (ie/ AccountEvents) to Engine
+        // 构建用于与 Engine 通信 ExecutionRequest 响应（即 AccountEvents）的通道
         let (response_tx, response_rx) = mpsc_unbounded();
 
-        // Construct merged IndexedAccountStream (execution responses + account notifications)
+        // 构建合并的 IndexedAccountStream（执行响应 + 账户通知）
         let merged_account_stream = merge(
             response_rx.into_stream(),
             account_stream
@@ -216,8 +259,22 @@ where
         )
     }
 
-    /// Run the `ExecutionManager`, processing execution requests and forwarding back responses via
-    /// the AccountStream.
+    /// 运行 `ExecutionManager`，处理执行请求并通过 AccountStream 转发响应。
+    ///
+    /// 此方法运行执行管理器的主循环，处理来自 Engine 的执行请求并转发响应。
+    /// 它同时处理取消和开仓请求，跟踪在途请求，并在超时时返回错误。
+    ///
+    /// ## 工作流程
+    ///
+    /// 1. 接收来自 Engine 的执行请求
+    /// 2. 将请求转换为交易所格式并发送
+    /// 3. 跟踪在途请求
+    /// 4. 处理响应（成功、错误或超时）
+    /// 5. 将响应转换回索引格式并转发回 Engine
+    ///
+    /// ## 超时处理
+    ///
+    /// 如果请求在超时时间内未收到响应，会生成超时错误并转发回 Engine。
     pub async fn run(mut self) {
         let mut in_flight_cancels = FuturesUnordered::new();
         let mut in_flight_opens = FuturesUnordered::new();

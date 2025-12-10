@@ -1,9 +1,11 @@
+// 允许 dev-dependencies 中的未使用 extern crate 警告
+// 这些依赖仅在示例/测试/基准测试中使用，不在库代码中使用
+#![allow(unused_extern_crates)]
 #![forbid(unsafe_code)]
 #![warn(
     unused,
     clippy::cognitive_complexity,
     unused_crate_dependencies,
-    unused_extern_crates,
     clippy::unused_self,
     clippy::useless_let_if_seq,
     missing_debug_implementations,

@@ -1,3 +1,8 @@
+//! 测试 Engine 处理 EngineEvent 并生成审计信息的功能。
+//!
+//! 本测试模块验证 Engine 在处理各种事件时能够正确生成审计信息，
+//! 包括市场事件、账户事件、订单状态变更等。
+
 use barter::{
     EngineEvent, Sequence, Timed,
     engine::{
@@ -74,22 +79,33 @@ use fnv::FnvHashMap;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
+// 测试常量定义
+/// 起始时间戳。
 const STARTING_TIMESTAMP: DateTime<Utc> = DateTime::<Utc>::MIN_UTC;
+/// 无风险收益率（5%）。
 const RISK_FREE_RETURN: Decimal = dec!(0.05);
+/// 起始 USDT 余额。
 const STARTING_BALANCE_USDT: Balance = Balance {
     total: dec!(40_000.0),
     free: dec!(40_000.0),
 };
+/// 起始 BTC 余额。
 const STARTING_BALANCE_BTC: Balance = Balance {
     total: dec!(1.0),
     free: dec!(1.0),
 };
+/// 起始 ETH 余额。
 const STARTING_BALANCE_ETH: Balance = Balance {
     total: dec!(10.0),
     free: dec!(10.0),
 };
-const QUOTE_FEES_PERCENT: f64 = 0.1; // 10%
+/// 报价资产手续费百分比（10%）。
+const QUOTE_FEES_PERCENT: f64 = 0.1;
 
+/// 测试 Engine 处理 EngineEvent 并生成审计信息的功能。
+///
+/// 此测试验证 Engine 在处理各种事件时能够正确生成审计信息，
+/// 包括市场事件、账户事件、订单状态变更等。
 #[test]
 fn test_engine_process_engine_event_with_audit() {
     let (execution_tx, mut execution_rx) = mpsc_unbounded();

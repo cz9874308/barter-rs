@@ -1,3 +1,16 @@
+//! SystemBuilder 系统构建器模块
+//!
+//! 本模块提供了用于构建完整 Barter 交易系统的构建器。
+//! SystemBuilder 允许用户配置 Engine、执行组件、市场数据流等，然后构建和初始化系统。
+//!
+//! # 核心概念
+//!
+//! - **SystemBuilder**: 系统构建器，用于配置和构建系统
+//! - **SystemArgs**: 构建系统所需的参数
+//! - **SystemBuild**: 已构建但未初始化的系统
+//! - **EngineFeedMode**: Engine 事件处理模式（Iterator 或 Stream）
+//! - **AuditMode**: 审计模式（启用或禁用）
+
 use crate::{
     engine::{
         Engine, Processor,
@@ -35,83 +48,176 @@ use futures::Stream;
 use serde::{Deserialize, Serialize};
 use std::{fmt::Debug, marker::PhantomData};
 
-/// Defines how the `Engine` processes input events.
+/// 定义 `Engine` 如何处理输入事件。
 ///
-/// Use this to control whether the `Engine` runs in a synchronous blocking thread
-/// with an `Iterator` or asynchronously with a `Stream`.
+/// 使用此枚举控制 `Engine` 是在阻塞线程中使用 `Iterator` 同步运行，
+/// 还是使用 `Stream` 和 tokio 任务异步运行。
+///
+/// ## 模式说明
+///
+/// - **Iterator**: 同步模式，在阻塞线程中处理事件（默认）
+/// - **Stream**: 异步模式，使用 tokio 任务处理事件
+///
+/// ## 使用场景
+///
+/// - **Iterator**: 单线程回测、简单场景
+/// - **Stream**: 大规模并发回测、需要异步处理的场景
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Deserialize, Serialize, Default)]
 pub enum EngineFeedMode {
-    /// Process events synchronously with an `Iterator` in a blocking thread (default).
+    /// 在阻塞线程中使用 `Iterator` 同步处理事件（默认）。
     #[default]
     Iterator,
 
-    /// Process events asynchronously with a `Stream` and tokio tasks.
+    /// 使用 `Stream` 和 tokio 任务异步处理事件。
     ///
-    /// Useful when running concurrent backtests at scale.
+    /// 在运行大规模并发回测时很有用。
     Stream,
 }
 
-/// Defines if the `Engine` sends the audit events it produces on the audit channel.
+/// 定义 `Engine` 是否在审计通道上发送其生成的审计事件。
+///
+/// AuditMode 控制是否启用审计事件流。启用后，可以通过 `System::take_audit()` 获取审计流。
+///
+/// ## 模式说明
+///
+/// - **Enabled**: 启用审计事件发送
+/// - **Disabled**: 禁用审计事件发送（默认）
+///
+/// ## 使用场景
+///
+/// - **Enabled**: 需要审计流用于 UI、监控、调试等
+/// - **Disabled**: 不需要审计流，节省资源（默认）
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Deserialize, Serialize, Default)]
 pub enum AuditMode {
-    /// Enable audit event sending.
+    /// 启用审计事件发送。
     Enabled,
 
-    /// Disable audit event sending (default).
+    /// 禁用审计事件发送（默认）。
     #[default]
     Disabled,
 }
 
-/// Arguments required for building a full Barter trading system.
+/// 构建完整 Barter 交易系统所需的参数。
 ///
-/// Contains all the required components to build and initialise a full Barter trading system,
-/// including the `Engine` and all supporting infrastructure.
+/// SystemArgs 包含构建和初始化完整 Barter 交易系统所需的所有组件，
+/// 包括 `Engine` 和所有支持基础设施。
+///
+/// ## 类型参数
+///
+/// - `Clock`: Engine 时钟类型
+/// - `Strategy`: 策略类型
+/// - `Risk`: 风险管理器类型
+/// - `MarketStream`: 市场数据流类型
+/// - `GlobalData`: 全局数据类型
+/// - `FnInstrumentData`: 交易对数据初始化函数类型
+///
+/// ## 字段说明
+///
+/// - **instruments**: 系统将跟踪的索引化交易对集合
+/// - **executions**: 交易所执行链接的配置
+/// - **clock**: 时间保持的 `EngineClock` 实现（例如，回测用 `HistoricalClock`，实盘/模拟用 `LiveClock`）
+/// - **strategy**: Engine `Strategy` 实现
+/// - **risk**: Engine `RiskManager` 实现
+/// - **market_stream**: `MarketStreamEvent` 流
+/// - **global_data**: `EngineState` 的 `GlobalData`
+/// - **instrument_data_init**: 构建 `EngineState` 时用于初始化每个交易对的 `InstrumentDataState` 的闭包
 #[derive(Debug, Clone, PartialEq, PartialOrd, Constructor)]
 pub struct SystemArgs<'a, Clock, Strategy, Risk, MarketStream, GlobalData, FnInstrumentData> {
-    /// Indexed collection of instruments the system will track.
+    /// 系统将跟踪的索引化交易对集合。
     pub instruments: &'a IndexedInstruments,
 
-    /// Execution configurations for exchange execution links.
+    /// 交易所执行链接的配置。
     pub executions: Vec<ExecutionConfig>,
 
-    /// `EngineClock` implementation for time keeping.
+    /// 用于时间保持的 `EngineClock` 实现。
     ///
-    /// For example, `HistoricalClock` for backtesting and `LiveClock` for live/paper trading.
+    /// 例如，回测使用 `HistoricalClock`，实盘/模拟交易使用 `LiveClock`。
     pub clock: Clock,
 
-    /// Engine `Strategy` implementation.
+    /// Engine `Strategy` 实现。
     pub strategy: Strategy,
 
-    /// Engine `RiskManager` implementation.
+    /// Engine `RiskManager` 实现。
     pub risk: Risk,
 
-    /// `Stream` of `MarketStreamEvent`s.
+    /// `MarketStreamEvent` 流。
     pub market_stream: MarketStream,
 
-    /// `EngineState` `GlobalData`
+    /// `EngineState` 的 `GlobalData`。
     pub global_data: GlobalData,
 
-    /// Closure used when building the `EngineState` to initialise every
-    /// instrument's `InstrumentDataState`.
+    /// 构建 `EngineState` 时用于初始化每个交易对的 `InstrumentDataState` 的闭包。
     pub instrument_data_init: FnInstrumentData,
 }
 
-/// Builder for constructing a full Barter trading system.
+/// 用于构建完整 Barter 交易系统的构建器。
+///
+/// SystemBuilder 提供了流畅的 API 来配置和构建交易系统。它支持链式调用，
+/// 允许逐步配置系统的各个组件。
+///
+/// ## 类型参数
+///
+/// - `Clock`: Engine 时钟类型
+/// - `Strategy`: 策略类型
+/// - `Risk`: 风险管理器类型
+/// - `MarketStream`: 市场数据流类型
+/// - `GlobalData`: 全局数据类型
+/// - `FnInstrumentData`: 交易对数据初始化函数类型
+///
+/// ## 使用流程
+///
+/// 1. 创建 SystemBuilder（使用 SystemArgs）
+/// 2. 可选配置（engine_feed_mode、audit_mode、trading_state、balances）
+/// 3. 调用 `build()` 构建系统
+/// 4. 调用 `init()` 初始化系统
+///
+/// # 使用示例
+///
+/// ```rust,ignore
+/// let builder = SystemBuilder::new(SystemArgs {
+///     instruments: &instruments,
+///     executions: vec![...],
+///     clock: HistoricalClock::new(...),
+///     strategy: MyStrategy::new(),
+///     risk: MyRiskManager::new(),
+///     market_stream: market_stream,
+///     global_data: DefaultGlobalData,
+///     instrument_data_init: |_| DefaultInstrumentData,
+/// })
+/// .engine_feed_mode(EngineFeedMode::Iterator)
+/// .audit_mode(AuditMode::Enabled)
+/// .trading_state(TradingState::Enabled);
+///
+/// let system = builder.build()?.init().await?;
+/// ```
 #[derive(Debug)]
 pub struct SystemBuilder<'a, Clock, Strategy, Risk, MarketStream, GlobalData, FnInstrumentData> {
+    /// 系统构建参数。
     args: SystemArgs<'a, Clock, Strategy, Risk, MarketStream, GlobalData, FnInstrumentData>,
+    /// 可选的 Engine 事件处理模式。
     engine_feed_mode: Option<EngineFeedMode>,
+    /// 可选的审计模式。
     audit_mode: Option<AuditMode>,
+    /// 可选的初始交易状态。
     trading_state: Option<TradingState>,
+    /// 初始交易所资产余额。
     balances: FnvHashMap<ExchangeAsset<AssetNameInternal>, Balance>,
 }
 
 impl<'a, Clock, Strategy, Risk, MarketStream, GlobalData, FnInstrumentData>
     SystemBuilder<'a, Clock, Strategy, Risk, MarketStream, GlobalData, FnInstrumentData>
 {
-    /// Create a new `SystemBuilder` with the provided `SystemArguments`.
+    /// 使用提供的 `SystemArguments` 创建新的 `SystemBuilder`。
     ///
-    /// Initialises a builder with default values for optional configurations.
+    /// 使用可选配置的默认值初始化构建器。
+    ///
+    /// # 参数
+    ///
+    /// - `config`: 系统构建参数
+    ///
+    /// # 返回值
+    ///
+    /// 返回新创建的 SystemBuilder 实例。
     pub fn new(
         config: SystemArgs<'a, Clock, Strategy, Risk, MarketStream, GlobalData, FnInstrumentData>,
     ) -> Self {
@@ -124,9 +230,17 @@ impl<'a, Clock, Strategy, Risk, MarketStream, GlobalData, FnInstrumentData>
         }
     }
 
-    /// Optionally configure the [`EngineFeedMode`] (`Iterator` or `Stream`).
+    /// 可选配置 [`EngineFeedMode`]（`Iterator` 或 `Stream`）。
     ///
-    /// Controls whether the engine processes events synchronously or asynchronously.
+    /// 控制 Engine 是同步还是异步处理事件。
+    ///
+    /// # 参数
+    ///
+    /// - `value`: Engine 事件处理模式
+    ///
+    /// # 返回值
+    ///
+    /// 返回更新后的 SystemBuilder。
     pub fn engine_feed_mode(self, value: EngineFeedMode) -> Self {
         Self {
             engine_feed_mode: Some(value),
@@ -134,9 +248,17 @@ impl<'a, Clock, Strategy, Risk, MarketStream, GlobalData, FnInstrumentData>
         }
     }
 
-    /// Optionally configure the [`AuditMode`] (enabled or disabled).
+    /// 可选配置 [`AuditMode`]（启用或禁用）。
     ///
-    /// Controls whether the engine sends the audit events it produces.
+    /// 控制 Engine 是否发送其产生的审计事件。
+    ///
+    /// # 参数
+    ///
+    /// - `value`: 审计模式
+    ///
+    /// # 返回值
+    ///
+    /// 返回更新后的 SystemBuilder。
     pub fn audit_mode(self, value: AuditMode) -> Self {
         Self {
             audit_mode: Some(value),
@@ -144,9 +266,17 @@ impl<'a, Clock, Strategy, Risk, MarketStream, GlobalData, FnInstrumentData>
         }
     }
 
-    /// Optionally configure the initial [`TradingState`] (enabled or disabled).
+    /// 可选配置初始 [`TradingState`]（启用或禁用）。
     ///
-    /// Sets whether algorithmic trading is initially enabled when the system starts.
+    /// 设置系统启动时算法交易是否初始启用。
+    ///
+    /// # 参数
+    ///
+    /// - `value`: 交易状态
+    ///
+    /// # 返回值
+    ///
+    /// 返回更新后的 SystemBuilder。
     pub fn trading_state(self, value: TradingState) -> Self {
         Self {
             trading_state: Some(value),
@@ -154,13 +284,24 @@ impl<'a, Clock, Strategy, Risk, MarketStream, GlobalData, FnInstrumentData>
         }
     }
 
-    /// Optionally provide initial exchange asset `Balance`s.
+    /// 可选提供初始交易所资产 `Balance`。
     ///
-    /// Useful for back-test scenarios where seeding EngineState with initial `Balance`s is
-    /// required.
+    /// 对于需要在 EngineState 中初始化初始 `Balance` 的回测场景很有用。
     ///
-    /// Note the internal implementation uses a `HashMap`, so duplicate
-    /// `ExchangeAsset<AssetNameInternal>` keys are overwritten.
+    /// 注意：内部实现使用 `HashMap`，因此重复的 `ExchangeAsset<AssetNameInternal>` 键会被覆盖。
+    ///
+    /// # 类型参数
+    ///
+    /// - `BalanceIter`: 余额迭代器类型
+    /// - `KeyedBalance`: 键值化余额类型
+    ///
+    /// # 参数
+    ///
+    /// - `balances`: 初始余额迭代器
+    ///
+    /// # 返回值
+    ///
+    /// 返回更新后的 SystemBuilder。
     pub fn balances<BalanceIter, KeyedBalance>(mut self, balances: BalanceIter) -> Self
     where
         BalanceIter: IntoIterator<Item = KeyedBalance>,
@@ -174,11 +315,27 @@ impl<'a, Clock, Strategy, Risk, MarketStream, GlobalData, FnInstrumentData>
         self
     }
 
-    /// Build the [`SystemBuild`] with the configured builder settings.
+    /// 使用配置的构建器设置构建 [`SystemBuild`]。
     ///
-    /// This constructs all the system components but does not start any tasks or streams.
+    /// 此方法构建所有系统组件，但不启动任何任务或流。
     ///
-    /// Initialise the `SystemBuild` instance to start the system.
+    /// 初始化 `SystemBuild` 实例以启动系统。
+    ///
+    /// ## 构建流程
+    ///
+    /// 1. 构建执行基础设施
+    /// 2. 构建 EngineState
+    /// 3. 构造 Engine
+    /// 4. 返回 SystemBuild
+    ///
+    /// # 类型参数
+    ///
+    /// - `Event`: Engine 事件类型
+    /// - `InstrumentData`: 交易对数据类型
+    ///
+    /// # 返回值
+    ///
+    /// 返回已构建但未初始化的 SystemBuild，如果构建失败则返回错误。
     pub fn build<Event, InstrumentData>(
         self,
     ) -> Result<
@@ -263,29 +420,45 @@ impl<'a, Clock, Strategy, Risk, MarketStream, GlobalData, FnInstrumentData>
     }
 }
 
-/// Fully constructed `SystemBuild` ready to be initialised.
+/// 已完全构建但准备初始化的 `SystemBuild`。
 ///
-/// This is an intermediate step before spawning tasks and running the system.
+/// 这是在生成任务和运行系统之前的中间步骤。
+///
+/// ## 类型参数
+///
+/// - `Engine`: Engine 类型
+/// - `Event`: Engine 事件类型
+/// - `MarketStream`: 市场数据流类型
+///
+/// ## 字段说明
+///
+/// - **engine**: 已构建的 `Engine` 实例
+/// - **engine_feed_mode**: 选择的 [`EngineFeedMode`]
+/// - **audit_mode**: 选择的 [`AuditMode`]
+/// - **market_stream**: `MarketStreamEvent` 流
+/// - **account_channel**: `AccountStreamEvent` 通道
+/// - **execution_build_futures**: 用于初始化 `ExecutionBuild` 组件的 Future
 #[allow(missing_debug_implementations)]
 pub struct SystemBuild<Engine, Event, MarketStream> {
-    /// Constructed `Engine` instance.
+    /// 已构建的 `Engine` 实例。
     pub engine: Engine,
 
-    /// Selected [`EngineFeedMode`].
+    /// 选择的 [`EngineFeedMode`]。
     pub engine_feed_mode: EngineFeedMode,
 
-    /// Selected [`AuditMode`].
+    /// 选择的 [`AuditMode`]。
     pub audit_mode: AuditMode,
 
-    /// `Stream` of `MarketStreamEvent`s.
+    /// `MarketStreamEvent` 流。
     pub market_stream: MarketStream,
 
-    /// Channel for `AccountStreamEvent`.
+    /// `AccountStreamEvent` 通道。
     pub account_channel: Channel<AccountStreamEvent>,
 
-    /// Futures for initialising `ExecutionBuild` components.
+    /// 用于初始化 `ExecutionBuild` 组件的 Future。
     pub execution_build_futures: ExecutionBuildFutures,
 
+    /// 事件类型标记。
     phantom_event: PhantomData<Event>,
 }
 
@@ -300,7 +473,20 @@ where
     Event: From<MarketStream::Item> + From<AccountStreamEvent> + Debug + Clone + Send + 'static,
     MarketStream: Stream + Send + 'static,
 {
-    /// Construct a new `SystemBuild` from the provided components.
+    /// 从提供的组件构造新的 `SystemBuild`。
+    ///
+    /// # 参数
+    ///
+    /// - `engine`: 已构建的 Engine 实例
+    /// - `engine_feed_mode`: Engine 事件处理模式
+    /// - `audit_mode`: 审计模式
+    /// - `market_stream`: 市场数据流
+    /// - `account_channel`: 账户事件通道
+    /// - `execution_build_futures`: 执行构建 Future
+    ///
+    /// # 返回值
+    ///
+    /// 返回新创建的 SystemBuild 实例。
     pub fn new(
         engine: Engine,
         engine_feed_mode: EngineFeedMode,
@@ -320,16 +506,36 @@ where
         }
     }
 
-    /// Initialise the system using the current tokio runtime.
+    /// 使用当前 tokio 运行时初始化系统。
     ///
-    /// Spawns all necessary tasks and returns the running `System` instance.
+    /// 生成所有必要的任务并返回运行中的 `System` 实例。
+    ///
+    /// ## 初始化流程
+    ///
+    /// 1. 初始化所有执行组件
+    /// 2. 创建 Engine 事件通道
+    /// 3. 启动市场事件转发任务
+    /// 4. 启动账户事件转发任务
+    /// 5. 根据配置的模式运行 Engine
+    ///
+    /// # 返回值
+    ///
+    /// 返回初始化的 System 实例，如果初始化失败则返回错误。
     pub async fn init(self) -> Result<System<Engine, Event>, BarterError> {
         self.init_internal(tokio::runtime::Handle::current()).await
     }
 
-    /// Initialise the system using the provided tokio runtime.
+    /// 使用提供的 tokio 运行时初始化系统。
     ///
-    /// Allows specifying a custom runtime for spawning tasks.
+    /// 允许指定自定义运行时来生成任务。
+    ///
+    /// # 参数
+    ///
+    /// - `runtime`: tokio 运行时句柄
+    ///
+    /// # 返回值
+    ///
+    /// 返回初始化的 System 实例，如果初始化失败则返回错误。
     pub async fn init_with_runtime(
         self,
         runtime: tokio::runtime::Handle,

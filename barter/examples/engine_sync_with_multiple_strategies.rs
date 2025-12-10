@@ -60,6 +60,11 @@ use tracing::debug;
 const FILE_PATH_SYSTEM_CONFIG: &str = "barter/examples/config/system_config.json";
 const RISK_FREE_RETURN: Decimal = dec!(0.05);
 
+/// 多策略组合示例。
+///
+/// 此结构体展示了如何组合多个策略，但在当前示例中使用的是 `DefaultStrategy`。
+/// 保留此结构体作为如何实现多策略的参考。
+#[allow(dead_code)]
 struct MultiStrategy {
     strategy_a: StrategyA,
     strategy_b: StrategyB,

@@ -1,25 +1,58 @@
+//! Mean Drawdown 平均回撤模块
+//!
+//! 本模块提供了 Mean Drawdown（平均回撤）的计算逻辑。
+//! 平均回撤是从一组 [`Drawdown`] 中计算的平均回撤值和毫秒持续时间。
+//!
+//! # 核心概念
+//!
+//! - **MeanDrawdown**: 平均回撤值，包含平均回撤幅度和平均持续时间
+//! - **MeanDrawdownGenerator**: 平均回撤生成器，使用 Welford Online 算法增量计算平均值
+
 use crate::statistic::{algorithm::welford_online, metric::drawdown::Drawdown};
 use derive_more::Constructor;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
-/// [`MeanDrawdown`] is defined as the mean (average) drawdown value and millisecond duration from
-/// a collection of [`Drawdown`]s.
+/// [`MeanDrawdown`] 定义为从一组 [`Drawdown`] 中计算的平均回撤值和毫秒持续时间。
+///
+/// MeanDrawdown 包含两个平均值：
+/// - 平均回撤幅度（百分比）
+/// - 平均回撤持续时间（毫秒）
+///
+/// ## 字段说明
+///
+/// - **mean_drawdown**: 平均回撤值（百分比）
+/// - **mean_drawdown_ms**: 平均回撤持续时间（毫秒）
 #[derive(Debug, Clone, PartialEq, PartialOrd, Default, Deserialize, Serialize, Constructor)]
 pub struct MeanDrawdown {
+    /// 平均回撤值（百分比）。
     pub mean_drawdown: Decimal,
+    /// 平均回撤持续时间（毫秒）。
     pub mean_drawdown_ms: i64,
 }
 
-/// [`MeanDrawdown`] generator.
+/// [`MeanDrawdown`] 生成器。
+///
+/// MeanDrawdownGenerator 使用 Welford Online 算法增量计算平均回撤值。
+/// 它可以在单次遍历数据时计算平均值，不需要存储所有回撤值。
 #[derive(Debug, Clone, PartialEq, PartialOrd, Default, Deserialize, Serialize, Constructor)]
 pub struct MeanDrawdownGenerator {
+    /// 回撤计数。
     pub count: u64,
+    /// 当前平均回撤（可选）。
     pub mean_drawdown: Option<MeanDrawdown>,
 }
 
 impl MeanDrawdownGenerator {
-    /// Initialise a [`MeanDrawdownGenerator`] from an initial [`Drawdown`].
+    /// 从初始 [`Drawdown`] 初始化 [`MeanDrawdownGenerator`]。
+    ///
+    /// # 参数
+    ///
+    /// - `drawdown`: 初始回撤
+    ///
+    /// # 返回值
+    ///
+    /// 返回新创建的 MeanDrawdownGenerator 实例。
     pub fn init(drawdown: Drawdown) -> Self {
         Self {
             count: 1,
@@ -30,7 +63,13 @@ impl MeanDrawdownGenerator {
         }
     }
 
-    /// Updates the mean drawdown and mean drawdown duration using the next [`Drawdown`] provided.
+    /// 使用提供的下一个 [`Drawdown`] 更新平均回撤和平均回撤持续时间。
+    ///
+    /// 此方法使用 Welford Online 算法增量更新平均值，不需要存储所有回撤值。
+    ///
+    /// # 参数
+    ///
+    /// - `next_drawdown`: 下一个回撤
     pub fn update(&mut self, next_drawdown: &Drawdown) {
         self.count += 1;
 
@@ -39,11 +78,13 @@ impl MeanDrawdownGenerator {
                 mean_drawdown,
                 mean_drawdown_ms,
             }) => MeanDrawdown {
+                // 使用 Welford Online 算法更新平均回撤值
                 mean_drawdown: welford_online::calculate_mean(
                     mean_drawdown,
                     next_drawdown.value,
                     Decimal::from(self.count),
                 ),
+                // 使用 Welford Online 算法更新平均持续时间
                 mean_drawdown_ms: welford_online::calculate_mean(
                     mean_drawdown_ms,
                     next_drawdown.duration().num_milliseconds(),
@@ -59,7 +100,11 @@ impl MeanDrawdownGenerator {
         self.mean_drawdown = Some(mean_drawdown)
     }
 
-    /// Generate the current [`MeanDrawdown`], if one exists.
+    /// 生成当前的 [`MeanDrawdown`]（如果存在）。
+    ///
+    /// # 返回值
+    ///
+    /// 返回当前平均回撤，如果不存在则返回 `None`。
     pub fn generate(&self) -> Option<MeanDrawdown> {
         self.mean_drawdown.clone()
     }

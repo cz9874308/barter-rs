@@ -1,18 +1,46 @@
+//! Calmar Ratio 卡尔玛比率模块
+//!
+//! 本模块提供了 Calmar Ratio（卡尔玛比率）的计算逻辑。
+//! 卡尔玛比率是一种风险调整后的收益指标，将超额收益（超过无风险利率）除以最大回撤风险。
+//! 它类似于 Sharpe 和 Sortino 比率，但使用最大回撤作为风险度量而不是标准差。
+//!
+//! # 计算公式
+//!
+//! `Calmar Ratio = (平均收益率 - 无风险收益率) / 最大回撤`
+//!
+//! # 参考文档
+//!
+//! <https://corporatefinanceinstitute.com/resources/career-map/sell-side/capital-markets/calmar-ratio/>
+
 use crate::statistic::time::TimeInterval;
 use rust_decimal::{Decimal, MathematicalOps};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 
-/// Represents a Calmar Ratio value over a specific [`TimeInterval`].
+/// 表示特定 [`TimeInterval`] 上的 Calmar Ratio 值。
 ///
-/// The Calmar Ratio is a risk-adjusted return measure that divides the excess return
-/// (over risk-free rate) by the Maximum Drawdown risk. It's similar to the Sharpe and Sortino
-/// ratios, but uses Maximum Drawdown as the risk measure instead of standard deviation.
+/// Calmar Ratio 是一种风险调整后的收益指标，将超额收益（超过无风险利率）
+/// 除以最大回撤风险。它类似于 Sharpe 和 Sortino 比率，但使用最大回撤作为风险度量
+/// 而不是标准差。
 ///
-/// See docs: <https://corporatefinanceinstitute.com/resources/career-map/sell-side/capital-markets/calmar-ratio/>
+/// ## 解释
+///
+/// - **高 Calmar Ratio**: 表示在承担相同最大回撤风险的情况下获得了更高的收益
+/// - **低 Calmar Ratio**: 表示最大回撤风险调整后的收益较低
+/// - **负 Calmar Ratio**: 表示投资表现不如无风险资产
+///
+/// ## 类型参数
+///
+/// - `Interval`: 时间间隔类型
+///
+/// ## 参考文档
+///
+/// <https://corporatefinanceinstitute.com/resources/career-map/sell-side/capital-markets/calmar-ratio/>
 #[derive(Debug, Clone, PartialEq, PartialOrd, Default, Deserialize, Serialize)]
 pub struct CalmarRatio<Interval> {
+    /// Calmar Ratio 值。
     pub value: Decimal,
+    /// 时间间隔。
     pub interval: Interval,
 }
 
@@ -20,7 +48,29 @@ impl<Interval> CalmarRatio<Interval>
 where
     Interval: TimeInterval,
 {
-    /// Calculate the [`CalmarRatio`] over the provided [`TimeInterval`].
+    /// 在提供的 [`TimeInterval`] 上计算 [`CalmarRatio`]。
+    ///
+    /// ## 计算公式
+    ///
+    /// `Calmar Ratio = (平均收益率 - 无风险收益率) / |最大回撤|`
+    ///
+    /// ## 特殊情况
+    ///
+    /// 如果最大回撤为零（无回撤风险）：
+    /// - 超额收益为正：返回 `Decimal::MAX`（表示无限好）
+    /// - 超额收益为负：返回 `Decimal::MIN`（表示无限差）
+    /// - 超额收益为零：返回 `Decimal::ZERO`（中性）
+    ///
+    /// # 参数
+    ///
+    /// - `risk_free_return`: 无风险收益率
+    /// - `mean_return`: 平均收益率
+    /// - `max_drawdown`: 最大回撤（绝对值会被使用）
+    /// - `returns_period`: 收益率的时间间隔
+    ///
+    /// # 返回值
+    ///
+    /// 返回计算得到的 CalmarRatio。
     pub fn calculate(
         risk_free_return: Decimal,
         mean_return: Decimal,
@@ -30,17 +80,18 @@ where
         if max_drawdown.is_zero() {
             Self {
                 value: match mean_return.cmp(&risk_free_return) {
-                    // Special case: +ve excess returns with no drawdown risk (very good)
+                    // 特殊情况：正超额收益且无回撤风险（非常好）
                     Ordering::Greater => Decimal::MAX,
-                    // Special case: -ve excess returns with no drawdown risk (very bad)
+                    // 特殊情况：负超额收益且无回撤风险（非常差）
                     Ordering::Less => Decimal::MIN,
-                    // Special case: no excess returns with no drawdown risk (neutral)
+                    // 特殊情况：无超额收益且无回撤风险（中性）
                     Ordering::Equal => Decimal::ZERO,
                 },
                 interval: returns_period,
             }
         } else {
             let excess_returns = mean_return - risk_free_return;
+            // 使用最大回撤的绝对值
             let ratio = excess_returns.checked_div(max_drawdown.abs()).unwrap();
             Self {
                 value: ratio,
@@ -49,16 +100,31 @@ where
         }
     }
 
-    /// Scale the [`CalmarRatio`] from the current [`TimeInterval`] to the provided [`TimeInterval`].
+    /// 将 [`CalmarRatio`] 从当前 [`TimeInterval`] 缩放到提供的 [`TimeInterval`]。
     ///
-    /// This scaling assumed the returns are independently and identically distributed (IID).
-    /// However, this assumption is debatable since maximum drawdown may not scale with the square
-    /// root of time like, for example, volatility does.
+    /// 此缩放假设收益率是独立同分布（IID）的。然而，这个假设是有争议的，
+    /// 因为最大回撤可能不会像波动率那样随时间的平方根缩放。
+    ///
+    /// ## 缩放公式
+    ///
+    /// `scaled_value = value * sqrt(target_interval / current_interval)`
+    ///
+    /// ## 类型参数
+    ///
+    /// - `TargetInterval`: 目标时间间隔类型
+    ///
+    /// # 参数
+    ///
+    /// - `target`: 目标时间间隔
+    ///
+    /// # 返回值
+    ///
+    /// 返回缩放后的 CalmarRatio。
     pub fn scale<TargetInterval>(self, target: TargetInterval) -> CalmarRatio<TargetInterval>
     where
         TargetInterval: TimeInterval,
     {
-        // Determine scale factor: square root of number of Self Intervals in TargetIntervals
+        // 确定缩放因子：目标间隔与当前间隔比值的平方根
         let target_secs = Decimal::from(target.interval().num_seconds());
         let current_secs = Decimal::from(self.interval.interval().num_seconds());
 

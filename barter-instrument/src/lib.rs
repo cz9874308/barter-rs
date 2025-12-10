@@ -13,40 +13,50 @@
 #![allow(clippy::type_complexity, clippy::too_many_arguments, type_alias_bounds)]
 
 //! # Barter-Instrument
-//! Barter-Instrument contains core Exchange, Instrument and Asset data structures and associated utilities.
+//! Barter-Instrument 包含核心的 Exchange、Instrument 和 Asset 数据结构及相关工具。
 //!
-//! ## Examples
-//! For a comprehensive collection of examples, see the Barter core Engine /examples directory.
+//! ## 示例
+//! 有关全面的示例集合，请参见 Barter 核心 Engine 的 /examples 目录。
 
 use derive_more::Constructor;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 
-/// Defines a global [`ExchangeId`](exchange::ExchangeId) enum covering all exchanges.
+/// 定义覆盖所有交易所的全局 [`ExchangeId`](exchange::ExchangeId) 枚举。
 pub mod exchange;
 
-/// [`Asset`](asset::Asset) related data structures.
+/// [`Asset`](asset::Asset) 相关的数据结构。
 ///
-/// eg/ `AssetKind`, `AssetNameInternal`, etc.
+/// 例如：`AssetKind`、`AssetNameInternal` 等。
 pub mod asset;
 
-/// [`Instrument`](instrument::Instrument) related data structures.
+/// [`Instrument`](instrument::Instrument) 相关的数据结构。
 ///
-/// eg/ `InstrumentKind`, `OptionContract``, etc.
+/// 例如：`InstrumentKind`、`OptionContract` 等。
 pub mod instrument;
 
-/// Indexed collection of exchanges, assets, and instruments. Provides a builder utility for
-/// indexing non-indexed collections.
+/// 交易所、资产和交易对的索引集合。提供用于索引非索引集合的构建器工具。
 pub mod index;
 
-/// A keyed value.
+/// 带键的值。
 ///
-/// eg/ Keyed<InstrumentIndex, Instrument>
+/// Keyed 将键和值组合在一起，用于索引集合。
+///
+/// ## 类型参数
+///
+/// - `Key`: 键类型
+/// - `Value`: 值类型
+///
+/// ## 使用示例
+///
+/// `Keyed<InstrumentIndex, Instrument>`
 #[derive(
     Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Deserialize, Serialize, Constructor,
 )]
 pub struct Keyed<Key, Value> {
+    /// 键。
     pub key: Key,
+    /// 值。
     pub value: Value,
 }
 
@@ -66,16 +76,36 @@ where
     }
 }
 
-/// Instrument Underlying containing a base and quote asset.
+/// 交易对底层资产，包含基础资产和报价资产。
 ///
-/// eg/ Underlying { base: "btc", quote: "usdt" }
+/// Underlying 表示交易对的基础资产和报价资产。
+///
+/// ## 类型参数
+///
+/// - `AssetKey`: 资产键类型
+///
+/// ## 使用示例
+///
+/// `Underlying { base: "btc", quote: "usdt" }`
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Deserialize, Serialize)]
 pub struct Underlying<AssetKey> {
+    /// 基础资产。
     pub base: AssetKey,
+    /// 报价资产。
     pub quote: AssetKey,
 }
 
 impl<AssetKey> Underlying<AssetKey> {
+    /// 创建新的 Underlying。
+    ///
+    /// # 参数
+    ///
+    /// - `base`: 基础资产（可转换为 `AssetKey`）
+    /// - `quote`: 报价资产（可转换为 `AssetKey`）
+    ///
+    /// # 返回值
+    ///
+    /// 返回新创建的 `Underlying` 实例。
     pub fn new<A>(base: A, quote: A) -> Self
     where
         A: Into<AssetKey>,
@@ -87,11 +117,15 @@ impl<AssetKey> Underlying<AssetKey> {
     }
 }
 
-/// [`Side`] of a trade or position - Buy or Sell.
+/// 交易或持仓的 [`Side`] - 买入或卖出。
+///
+/// Side 表示交易的方向，可以是买入（Buy）或卖出（Sell）。
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Deserialize, Serialize)]
 pub enum Side {
+    /// 买入。
     #[serde(alias = "buy", alias = "BUY", alias = "b")]
     Buy,
+    /// 卖出。
     #[serde(alias = "sell", alias = "SELL", alias = "s")]
     Sell,
 }

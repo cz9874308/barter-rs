@@ -1,16 +1,50 @@
+//! Rate Of Return 收益率模块
+//!
+//! 本模块提供了 Rate Of Return（收益率）的计算逻辑。
+//! 收益率衡量在一段时间内价值的百分比变化。
+//! 与风险调整指标不同，收益率随时间线性缩放。
+//!
+//! # 计算公式
+//!
+//! `Rate Of Return = 平均收益率`
+//!
+//! # 缩放特性
+//!
+//! 收益率使用线性缩放，而不是平方根缩放。例如，1% 的日收益率缩放为
+//! 约 252% 的年收益率（而不是 √252%）。
+//!
+//! # 参考文档
+//!
+//! <https://www.investopedia.com/terms/r/rateofreturn.asp>
+
 use crate::statistic::time::TimeInterval;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
-/// Represents a Rate of Return value over a specific [`TimeInterval`].
+/// 表示特定 [`TimeInterval`] 上的 Rate Of Return 值。
 ///
-/// Rate of Return measures the percentage change in value over a time period.
-/// Unlike risk-adjusted metrics, returns scale linearly with time.
+/// Rate Of Return 衡量在一段时间内价值的百分比变化。
+/// 与风险调整指标不同，收益率随时间线性缩放。
 ///
-/// See docs: <https://www.investopedia.com/terms/r/rateofreturn.asp>
+/// ## 缩放特性
+///
+/// 收益率使用线性缩放，而不是平方根缩放。例如，1% 的日收益率缩放为
+/// 约 252% 的年收益率（而不是 √252%）。
+///
+/// 这假设简单利息而不是复利。
+///
+/// ## 类型参数
+///
+/// - `Interval`: 时间间隔类型
+///
+/// ## 参考文档
+///
+/// <https://www.investopedia.com/terms/r/rateofreturn.asp>
 #[derive(Debug, Clone, PartialEq, PartialOrd, Default, Deserialize, Serialize)]
 pub struct RateOfReturn<Interval> {
+    /// 收益率值。
     pub value: Decimal,
+    /// 时间间隔。
     pub interval: Interval,
 }
 
@@ -18,7 +52,16 @@ impl<Interval> RateOfReturn<Interval>
 where
     Interval: TimeInterval,
 {
-    /// Calculate the [`RateOfReturn`] over the provided [`TimeInterval`].
+    /// 在提供的 [`TimeInterval`] 上计算 [`RateOfReturn`]。
+    ///
+    /// # 参数
+    ///
+    /// - `mean_return`: 平均收益率
+    /// - `returns_period`: 收益率的时间间隔
+    ///
+    /// # 返回值
+    ///
+    /// 返回计算得到的 RateOfReturn。
     pub fn calculate(mean_return: Decimal, returns_period: Interval) -> Self {
         Self {
             value: mean_return,
@@ -26,20 +69,34 @@ where
         }
     }
 
-    /// Scale the [`RateOfReturn`] from the current [`TimeInterval`] to the provided
-    /// [`TimeInterval`].
+    /// 将 [`RateOfReturn`] 从当前 [`TimeInterval`] 缩放到提供的 [`TimeInterval`]。
     ///
-    /// Unlike risk metrics which use square root scaling, [`RateOfReturn`] scales linearly
-    /// with time.
+    /// 与使用平方根缩放的风险指标不同，[`RateOfReturn`] 随时间线性缩放。
     ///
-    /// For example, a 1% daily return scales to approximately 252% annual return (not √252%).
+    /// 例如，1% 的日收益率缩放为约 252% 的年收益率（而不是 √252%）。
     ///
-    /// This assumes simple interest rather than compound interest.
+    /// 这假设简单利息而不是复利。
+    ///
+    /// ## 缩放公式
+    ///
+    /// `scaled_value = value * (target_interval / current_interval)`
+    ///
+    /// ## 类型参数
+    ///
+    /// - `TargetInterval`: 目标时间间隔类型
+    ///
+    /// # 参数
+    ///
+    /// - `target`: 目标时间间隔
+    ///
+    /// # 返回值
+    ///
+    /// 返回缩放后的 RateOfReturn。
     pub fn scale<TargetInterval>(self, target: TargetInterval) -> RateOfReturn<TargetInterval>
     where
         TargetInterval: TimeInterval,
     {
-        // Determine scale factor: linear scaling of Self Intervals in TargetIntervals
+        // 确定缩放因子：目标间隔与当前间隔的线性比例
         let target_secs = Decimal::from(target.interval().num_seconds());
         let current_secs = Decimal::from(self.interval.interval().num_seconds());
 

@@ -1,3 +1,15 @@
+//! Summary 统计摘要模块
+//!
+//! 本模块提供了金融数据集的统计摘要。
+//! 包括交易摘要、交易对摘要、资产摘要等。
+//!
+//! # 核心概念
+//!
+//! - **TradingSummary**: 交易摘要，包含所有交易对和资产的统计信息
+//! - **TearSheet**: 交易对摘要，包含单个交易对的详细统计
+//! - **TearSheetAsset**: 资产摘要，包含单个资产的统计信息
+//! - **PnLReturns**: 盈亏收益率统计
+
 use crate::{
     engine::state::{asset::AssetStates, instrument::InstrumentStates, position::PositionExited},
     statistic::{
@@ -19,60 +31,107 @@ use derive_more::Constructor;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
+/// 资产摘要模块。
 pub mod asset;
+
+/// 数据集统计模块。
 pub mod dataset;
+
+/// 显示格式化模块。
 pub mod display;
+
+/// 交易对摘要模块。
 pub mod instrument;
+
+/// 盈亏收益率模块。
 pub mod pnl;
 
+/// 交易摘要，包含交易会话的完整统计信息。
+///
+/// TradingSummary 是交易系统的完整统计摘要，包含所有交易对和资产的统计信息。
+/// 它提供了交易会话的整体绩效视图。
+///
+/// ## 类型参数
+///
+/// - `Interval`: 时间间隔类型，用于年化指标
+///
+/// ## 字段说明
+///
+/// - **time_engine_start**: 交易会话开始时间
+/// - **time_engine_end**: 交易会话结束时间
+/// - **instruments**: 交易对摘要映射
+/// - **assets**: 资产摘要映射
+///
+/// ## 注意事项
+///
+/// 交易对是交易所特定的，因此例如 Binance btc_usdt_spot 和 Okx btc_usdt_spot
+/// 将由不同的 [`TearSheet`] 汇总。
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize, Constructor)]
 pub struct TradingSummary<Interval> {
-    /// Trading session start time defined by the [`Engine`](crate::engine::Engine) clock.
+    /// 由 [`Engine`](crate::engine::Engine) 时钟定义的交易会话开始时间。
     pub time_engine_start: DateTime<Utc>,
 
-    /// Trading session end time defined by the [`Engine`](crate::engine::Engine) clock.
+    /// 由 [`Engine`](crate::engine::Engine) 时钟定义的交易会话结束时间。
     pub time_engine_end: DateTime<Utc>,
 
-    /// Instrument [`TearSheet`]s.
+    /// 交易对 [`TearSheet`] 映射。
     ///
-    /// Note that an Instrument is unique to an exchange, so, for example, Binance btc_usdt_spot
-    /// and Okx btc_usdt_spot will be summarised by distinct [`TearSheet`]s.
+    /// 注意：交易对是交易所特定的，因此例如 Binance btc_usdt_spot 和 Okx btc_usdt_spot
+    /// 将由不同的 [`TearSheet`] 汇总。
     pub instruments: FnvIndexMap<InstrumentNameInternal, TearSheet<Interval>>,
 
-    /// [`ExchangeAsset`] [`TearSheet`]s.
+    /// [`ExchangeAsset`] [`TearSheet`] 映射。
     pub assets: FnvIndexMap<ExchangeAsset<AssetNameInternal>, TearSheetAsset>,
 }
 
 impl<Interval> TradingSummary<Interval> {
-    /// Duration of trading that the `TradingSummary` covers.
+    /// `TradingSummary` 覆盖的交易持续时间。
+    ///
+    /// # 返回值
+    ///
+    /// 返回从交易开始到结束的时间差。
     pub fn trading_duration(&self) -> TimeDelta {
         self.time_engine_end
             .signed_duration_since(self.time_engine_start)
     }
 }
 
-/// Generator for a [`TradingSummary`].
+/// [`TradingSummary`] 的生成器。
+///
+/// TradingSummaryGenerator 用于增量构建交易摘要。它跟踪所有交易对和资产的统计信息，
+/// 并可以在任何时刻生成完整的 TradingSummary。
+///
+/// ## 字段说明
+///
+/// - **risk_free_return**: 无风险收益率（用于计算风险调整指标）
+/// - **time_engine_start**: 交易会话开始时间
+/// - **time_engine_now**: 交易会话最新更新时间
+/// - **instruments**: 交易对摘要生成器映射
+/// - **assets**: 资产摘要生成器映射
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize, Constructor)]
 pub struct TradingSummaryGenerator {
-    /// Theoretical rate of return of an investment with zero risk.
+    /// 零风险投资的理论收益率。
     ///
-    /// See docs: <https://www.investopedia.com/terms/r/risk-freerate.asp>
+    /// 用于计算风险调整指标（如 Sharpe Ratio、Sortino Ratio 等）。
+    ///
+    /// ## 参考文档
+    ///
+    /// <https://www.investopedia.com/terms/r/risk-freerate.asp>
     pub risk_free_return: Decimal,
 
-    /// Trading session summary start time defined by the [`Engine`](crate::engine::Engine) clock.
+    /// 由 [`Engine`](crate::engine::Engine) 时钟定义的交易会话摘要开始时间。
     pub time_engine_start: DateTime<Utc>,
 
-    /// Trading session summary most recent update time defined by the
-    /// [`Engine`](crate::engine::Engine) clock.
+    /// 由 [`Engine`](crate::engine::Engine) 时钟定义的交易会话摘要最新更新时间。
     pub time_engine_now: DateTime<Utc>,
 
-    /// Instrument [`TearSheetGenerator`]s.
+    /// 交易对 [`TearSheetGenerator`] 映射。
     ///
-    /// Note that an Instrument is unique to an exchange, so, for example, Binance btc_usdt_spot
-    /// and Okx btc_usdt_spot will be summarised by distinct [`TearSheet`]s.
+    /// 注意：交易对是交易所特定的，因此例如 Binance btc_usdt_spot 和 Okx btc_usdt_spot
+    /// 将由不同的 [`TearSheet`] 汇总。
     pub instruments: FnvIndexMap<InstrumentNameInternal, TearSheetGenerator>,
 
-    /// [`ExchangeAsset`] [`TearSheetAssetGenerator`]s.
+    /// [`ExchangeAsset`] [`TearSheetAssetGenerator`] 映射。
     pub assets: FnvIndexMap<ExchangeAsset<AssetNameInternal>, TearSheetAssetGenerator>,
 }
 

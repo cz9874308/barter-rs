@@ -1,16 +1,44 @@
+//! Sharpe Ratio 夏普比率模块
+//!
+//! 本模块提供了 Sharpe Ratio（夏普比率）的计算逻辑。
+//! 夏普比率是衡量投资风险调整后收益的指标，通过比较超额收益（超过无风险利率）
+//! 与标准差来计算。
+//!
+//! # 计算公式
+//!
+//! `Sharpe Ratio = (平均收益率 - 无风险收益率) / 收益率标准差`
+//!
+//! # 参考文档
+//!
+//! <https://www.investopedia.com/articles/07/sharpe_ratio.asp>
+
 use crate::statistic::time::TimeInterval;
 use rust_decimal::{Decimal, MathematicalOps};
 use serde::{Deserialize, Serialize};
 
-/// Represents a Sharpe Ratio value over a specific [`TimeInterval`].
+/// 表示特定 [`TimeInterval`] 上的 Sharpe Ratio 值。
 ///
-/// Sharpe Ratio measures the risk-adjusted return of an investment by comparing
-/// its excess returns (over risk-free rate) to its standard deviation.
+/// Sharpe Ratio 通过比较投资的超额收益（超过无风险利率）与其标准差来衡量
+/// 投资的风险调整后收益。
 ///
-/// See docs: <https://www.investopedia.com/articles/07/sharpe_ratio.asp>
+/// ## 解释
+///
+/// - **高 Sharpe Ratio**: 表示在承担相同风险的情况下获得了更高的收益
+/// - **低 Sharpe Ratio**: 表示风险调整后的收益较低
+/// - **负 Sharpe Ratio**: 表示投资表现不如无风险资产
+///
+/// ## 类型参数
+///
+/// - `Interval`: 时间间隔类型
+///
+/// ## 参考文档
+///
+/// <https://www.investopedia.com/articles/07/sharpe_ratio.asp>
 #[derive(Debug, Clone, PartialEq, PartialOrd, Default, Deserialize, Serialize)]
 pub struct SharpeRatio<Interval> {
+    /// Sharpe Ratio 值。
     pub value: Decimal,
+    /// 时间间隔。
     pub interval: Interval,
 }
 
@@ -18,7 +46,26 @@ impl<Interval> SharpeRatio<Interval>
 where
     Interval: TimeInterval,
 {
-    /// Calculate the [`SharpeRatio`] over the provided [`TimeInterval`].
+    /// 在提供的 [`TimeInterval`] 上计算 [`SharpeRatio`]。
+    ///
+    /// ## 计算公式
+    ///
+    /// `Sharpe Ratio = (平均收益率 - 无风险收益率) / 收益率标准差`
+    ///
+    /// ## 特殊情况
+    ///
+    /// 如果标准差为零（无波动），返回 `Decimal::MAX`（表示无限好的风险调整收益）。
+    ///
+    /// # 参数
+    ///
+    /// - `risk_free_return`: 无风险收益率
+    /// - `mean_return`: 平均收益率
+    /// - `std_dev_returns`: 收益率标准差
+    /// - `returns_period`: 收益率的时间间隔
+    ///
+    /// # 返回值
+    ///
+    /// 返回计算得到的 SharpeRatio。
     pub fn calculate(
         risk_free_return: Decimal,
         mean_return: Decimal,
@@ -26,6 +73,7 @@ where
         returns_period: Interval,
     ) -> Self {
         if std_dev_returns.is_zero() {
+            // 特殊情况：无波动，返回最大值
             Self {
                 value: Decimal::MAX,
                 interval: returns_period,
@@ -40,14 +88,30 @@ where
         }
     }
 
-    /// Scale the [`SharpeRatio`] from the current [`TimeInterval`] to the provided [`TimeInterval`].
+    /// 将 [`SharpeRatio`] 从当前 [`TimeInterval`] 缩放到提供的 [`TimeInterval`]。
     ///
-    /// This scaling assumed the returns are independently and identically distributed (IID).
+    /// 此缩放假设收益率是独立同分布（IID）的。
+    ///
+    /// ## 缩放公式
+    ///
+    /// `scaled_value = value * sqrt(target_interval / current_interval)`
+    ///
+    /// ## 类型参数
+    ///
+    /// - `TargetInterval`: 目标时间间隔类型
+    ///
+    /// # 参数
+    ///
+    /// - `target`: 目标时间间隔
+    ///
+    /// # 返回值
+    ///
+    /// 返回缩放后的 SharpeRatio。
     pub fn scale<TargetInterval>(self, target: TargetInterval) -> SharpeRatio<TargetInterval>
     where
         TargetInterval: TimeInterval,
     {
-        // Determine scale factor: square root of number of Self Intervals in TargetIntervals
+        // 确定缩放因子：目标间隔与当前间隔比值的平方根
         let target_secs = Decimal::from(target.interval().num_seconds());
         let current_secs = Decimal::from(self.interval.interval().num_seconds());
 

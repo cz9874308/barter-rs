@@ -61,7 +61,7 @@ use std::{
 
 criterion::criterion_main!(benchmark_backtest);
 
-// Config containing max balances to enable spamming open order requests
+/// 配置，包含最大余额以支持大量开仓订单请求。
 const CONFIG: &str = r#"
 {
   "risk_free_return": 0.05,
@@ -160,15 +160,22 @@ const CONFIG: &str = r#"
 }
 "#;
 
+/// 索引市场数据文件路径。
 const FILE_PATH_MARKET_DATA_INDEXED: &str =
     "examples/data/binance_spot_trades_l1_btcusdt_ethusdt_solusdt.json";
 
+/// 基准测试配置。
 #[derive(Deserialize)]
 pub struct Config {
+    /// 无风险收益率。
     pub risk_free_return: Decimal,
+    /// 系统配置。
     pub system: SystemConfig,
 }
 
+/// 回测基准测试主函数。
+///
+/// 此函数设置并运行回测性能基准测试，包括单个回测和并发回测。
 fn benchmark_backtest() {
     let Config {
         risk_free_return,
@@ -187,6 +194,15 @@ fn benchmark_backtest() {
     bench_backtests_concurrent(&mut c, args_constant, args_dynamic);
 }
 
+/// 单个回测的基准测试。
+///
+/// 此函数对单个回测的执行时间进行基准测试。
+///
+/// # 参数
+///
+/// - `c`: Criterion 基准测试器
+/// - `args_constant`: 回测常量参数
+/// - `args_dynamic`: 回测动态参数
 fn bench_backtest(
     c: &mut Criterion,
     args_constant: Arc<
@@ -225,6 +241,16 @@ fn bench_backtest(
     group.finish();
 }
 
+/// 并发回测的基准测试。
+///
+/// 此函数对并发执行多个回测的性能进行基准测试。
+/// 测试了 10 个并发回测和 500 个并发回测两种情况。
+///
+/// # 参数
+///
+/// - `c`: Criterion 基准测试器
+/// - `args_constant`: 回测常量参数
+/// - `args_dynamic`: 回测动态参数
 fn bench_backtests_concurrent(
     c: &mut Criterion,
     args_constant: Arc<
@@ -262,7 +288,7 @@ fn bench_backtests_concurrent(
         );
     };
 
-    // 10 concurrent backtests
+    // 10 个并发回测
     let mut group = c.benchmark_group("Backtest Concurrent");
     group.throughput(Throughput::Elements(10));
     group.warm_up_time(std::time::Duration::from_secs(1));
@@ -271,7 +297,7 @@ fn bench_backtests_concurrent(
     group.bench_function("10", |b| bench_func(b, 10));
     group.finish();
 
-    // 500 concurrent backtests
+    // 500 个并发回测
     let mut group = c.benchmark_group("Backtest Concurrent");
     group.throughput(Throughput::Elements(500));
     group.warm_up_time(std::time::Duration::from_secs(10));
@@ -281,8 +307,13 @@ fn bench_backtests_concurrent(
     group.finish();
 }
 
+/// 亏损策略（用于基准测试）。
+///
+/// 这是一个简单的策略，用于基准测试目的。
+/// 它会为每个交易对生成买入订单。
 #[derive(Debug, Clone)]
 struct LoseMoneyStrategy {
+    /// 策略标识符。
     pub id: StrategyId,
 }
 
@@ -398,9 +429,14 @@ impl
     }
 }
 
+/// 亏损交易对数据（用于基准测试）。
+///
+/// 此结构用于存储交易对的市场数据，包括最后交易信息。
 #[derive(Debug, Clone)]
 struct LoseMoneyInstrumentData {
+    /// 最后交易信息。
     last_trade: Option<PublicTrade>,
+    /// 默认市场数据。
     market_data: DefaultInstrumentMarketData,
 }
 
@@ -445,6 +481,16 @@ impl InFlightRequestRecorder for LoseMoneyInstrumentData {
     fn record_in_flight_open(&mut self, _: &OrderRequestOpen<ExchangeIndex, InstrumentIndex>) {}
 }
 
+/// 构建回测常量参数。
+///
+/// # 参数
+///
+/// - `instruments`: 交易对配置列表
+/// - `executions`: 执行配置列表
+///
+/// # 返回值
+///
+/// 返回回测常量参数。
 fn args_constant(
     instruments: Vec<InstrumentConfig>,
     executions: Vec<ExecutionConfig>,
@@ -455,15 +501,15 @@ fn args_constant(
         EngineState<DefaultGlobalData, LoseMoneyInstrumentData>,
     >,
 > {
-    // Construct IndexedInstruments
+    // 构建索引交易对集合
     let instruments = IndexedInstruments::new(instruments);
 
-    // Initialise MarketData
+    // 初始化市场数据
     let market_events = market_data_from_file(FILE_PATH_MARKET_DATA_INDEXED);
     let market_data = MarketDataInMemory::new(Arc::new(market_events));
     let time_engine_start = DateTime::<Utc>::from_str("2025-03-25T23:07:00.773674205Z").unwrap();
 
-    // Construct EngineState
+    // 构建 EngineState
     let engine_state = EngineStateBuilder::new(&instruments, DefaultGlobalData::default(), |_| {
         LoseMoneyInstrumentData::default()
     })
@@ -480,6 +526,20 @@ fn args_constant(
     })
 }
 
+/// 从文件加载市场数据。
+///
+/// # 类型参数
+///
+/// - `InstrumentKey`: 交易对键类型
+/// - `Kind`: 市场数据类型
+///
+/// # 参数
+///
+/// - `file_path`: 文件路径
+///
+/// # 返回值
+///
+/// 返回市场流事件列表。
 pub fn market_data_from_file<InstrumentKey, Kind>(
     file_path: &str,
 ) -> Vec<MarketStreamEvent<InstrumentKey, Kind>>
@@ -499,6 +559,15 @@ where
         .collect()
 }
 
+/// 构建回测动态参数。
+///
+/// # 参数
+///
+/// - `risk_free_return`: 无风险收益率
+///
+/// # 返回值
+///
+/// 返回回测动态参数。
 fn args_dynamic(
     risk_free_return: Decimal,
 ) -> BacktestArgsDynamic<

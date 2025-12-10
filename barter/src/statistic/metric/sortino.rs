@@ -1,16 +1,43 @@
+//! Sortino Ratio 索提诺比率模块
+//!
+//! 本模块提供了 Sortino Ratio（索提诺比率）的计算逻辑。
+//! 索提诺比率类似于夏普比率，但只考虑下行波动率（负收益的标准差）而不是总波动率。
+//! 这使得它对于非正态收益分布的资产组合来说是更好的指标。
+//!
+//! # 计算公式
+//!
+//! `Sortino Ratio = (平均收益率 - 无风险收益率) / 下行收益率标准差`
+//!
+//! # 与 Sharpe Ratio 的区别
+//!
+//! - Sharpe Ratio 使用总波动率（所有收益的标准差）
+//! - Sortino Ratio 只使用下行波动率（负收益的标准差）
+//! - Sortino Ratio 更适合评估有偏收益分布的策略
+
 use crate::statistic::time::TimeInterval;
 use rust_decimal::{Decimal, MathematicalOps};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 
-/// Represents a Sortino Ratio value over a specific [`TimeInterval`].
+/// 表示特定 [`TimeInterval`] 上的 Sortino Ratio 值。
 ///
-/// Similar to the Sharpe Ratio, but only considers downside volatility (standard deviation of
-/// negative returns) rather than total volatility. This makes it a better metric for portfolios
-/// with non-normal return distributions.
+/// Sortino Ratio 类似于 Sharpe Ratio，但只考虑下行波动率（负收益的标准差）
+/// 而不是总波动率。这使得它对于非正态收益分布的资产组合来说是更好的指标。
+///
+/// ## 解释
+///
+/// - **高 Sortino Ratio**: 表示在承担相同下行风险的情况下获得了更高的收益
+/// - **低 Sortino Ratio**: 表示下行风险调整后的收益较低
+/// - **负 Sortino Ratio**: 表示投资表现不如无风险资产
+///
+/// ## 类型参数
+///
+/// - `Interval`: 时间间隔类型
 #[derive(Debug, Clone, PartialEq, PartialOrd, Default, Deserialize, Serialize)]
 pub struct SortinoRatio<Interval> {
+    /// Sortino Ratio 值。
     pub value: Decimal,
+    /// 时间间隔。
     pub interval: Interval,
 }
 
@@ -18,7 +45,29 @@ impl<Interval> SortinoRatio<Interval>
 where
     Interval: TimeInterval,
 {
-    /// Calculate the [`SortinoRatio`] over the provided [`TimeInterval`].
+    /// 在提供的 [`TimeInterval`] 上计算 [`SortinoRatio`]。
+    ///
+    /// ## 计算公式
+    ///
+    /// `Sortino Ratio = (平均收益率 - 无风险收益率) / 下行收益率标准差`
+    ///
+    /// ## 特殊情况
+    ///
+    /// 如果下行标准差为零（无下行风险）：
+    /// - 超额收益为正：返回 `Decimal::MAX`（表示无限好）
+    /// - 超额收益为负：返回 `Decimal::MIN`（表示无限差）
+    /// - 超额收益为零：返回 `Decimal::ZERO`（中性）
+    ///
+    /// # 参数
+    ///
+    /// - `risk_free_return`: 无风险收益率
+    /// - `mean_return`: 平均收益率
+    /// - `std_dev_loss_returns`: 下行收益率标准差（只考虑负收益）
+    /// - `returns_period`: 收益率的时间间隔
+    ///
+    /// # 返回值
+    ///
+    /// 返回计算得到的 SortinoRatio。
     pub fn calculate(
         risk_free_return: Decimal,
         mean_return: Decimal,
@@ -28,11 +77,11 @@ where
         if std_dev_loss_returns.is_zero() {
             Self {
                 value: match mean_return.cmp(&risk_free_return) {
-                    // Special case: +ve excess returns with no downside risk (very good)
+                    // 特殊情况：正超额收益且无下行风险（非常好）
                     Ordering::Greater => Decimal::MAX,
-                    // Special case: -ve excess returns with no downside risk (very bad)
+                    // 特殊情况：负超额收益且无下行风险（非常差）
                     Ordering::Less => Decimal::MIN,
-                    // Special case: no excess returns with no downside risk (neutral)
+                    // 特殊情况：无超额收益且无下行风险（中性）
                     Ordering::Equal => Decimal::ZERO,
                 },
                 interval: returns_period,
@@ -47,15 +96,30 @@ where
         }
     }
 
-    /// Scale the [`SortinoRatio`] from the current [`TimeInterval`] to the provided [`TimeInterval`].
+    /// 将 [`SortinoRatio`] 从当前 [`TimeInterval`] 缩放到提供的 [`TimeInterval`]。
     ///
-    /// This scaling assumed the returns are independently and identically distributed (IID).
-    /// However, this assumption may be less appropriate for downside deviation.
+    /// 此缩放假设收益率是独立同分布（IID）的。然而，这个假设对于下行偏差可能不太合适。
+    ///
+    /// ## 缩放公式
+    ///
+    /// `scaled_value = value * sqrt(target_interval / current_interval)`
+    ///
+    /// ## 类型参数
+    ///
+    /// - `TargetInterval`: 目标时间间隔类型
+    ///
+    /// # 参数
+    ///
+    /// - `target`: 目标时间间隔
+    ///
+    /// # 返回值
+    ///
+    /// 返回缩放后的 SortinoRatio。
     pub fn scale<TargetInterval>(self, target: TargetInterval) -> SortinoRatio<TargetInterval>
     where
         TargetInterval: TimeInterval,
     {
-        // Determine scale factor: square root of number of Self Intervals in TargetIntervals
+        // 确定缩放因子：目标间隔与当前间隔比值的平方根
         let target_secs = Decimal::from(target.interval().num_seconds());
         let current_secs = Decimal::from(self.interval.interval().num_seconds());
 

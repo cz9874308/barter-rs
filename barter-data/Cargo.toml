@@ -11,6 +11,11 @@ description = "High performance & normalised WebSocket intergration for leading 
 keywords = ["trading", "backtesting", "crypto", "stocks", "investment"]
 categories = ["accessibility", "simulation"]
 
+[lints.rust]
+# 允许 dev-dependencies 中的未使用 extern crate 警告
+# 这些依赖仅在示例/测试/基准测试中使用，不在库代码中使用
+unused_extern_crates = "allow"
+
 [dev-dependencies]
 tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
 rust_decimal_macros = { workspace = true }
@@ -33,7 +38,7 @@ async-trait = { workspace = true }
 
 # Protocol
 url = { workspace = true }
-reqwest = { workspace = true}
+reqwest = { workspace = true }
 
 # Error
 thiserror = { workspace = true }

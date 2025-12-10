@@ -1,20 +1,3 @@
-use crate::engine::state::order::{
-    in_flight_recorder::InFlightRequestRecorder, manager::OrderManager,
-};
-use barter_execution::order::{
-    Order,
-    id::ClientOrderId,
-    request::{OrderRequestCancel, OrderRequestOpen, OrderResponseCancel},
-    state::{ActiveOrderState, CancelInFlight, OrderState},
-};
-use barter_instrument::{exchange::ExchangeIndex, instrument::InstrumentIndex};
-use barter_integration::snapshot::Snapshot;
-use derive_more::Constructor;
-use fnv::FnvHashMap;
-use serde::{Deserialize, Serialize};
-use std::{collections::hash_map::Entry, fmt::Debug};
-use tracing::{debug, error, warn};
-
 //! Engine 订单管理模块
 //!
 //! 本模块定义了同步订单管理器，用于跟踪活跃交易所订单的生命周期。
@@ -38,6 +21,23 @@ use tracing::{debug, error, warn};
 //! - 跟踪每个交易对的活跃订单
 //! - 管理订单状态转换
 //! - 处理订单快照和取消响应
+
+use crate::engine::state::order::{
+    in_flight_recorder::InFlightRequestRecorder, manager::OrderManager,
+};
+use barter_execution::order::{
+    Order,
+    id::ClientOrderId,
+    request::{OrderRequestCancel, OrderRequestOpen, OrderResponseCancel},
+    state::{ActiveOrderState, CancelInFlight, OrderState},
+};
+use barter_instrument::{exchange::ExchangeIndex, instrument::InstrumentIndex};
+use barter_integration::snapshot::Snapshot;
+use derive_more::Constructor;
+use fnv::FnvHashMap;
+use serde::{Deserialize, Serialize};
+use std::{collections::hash_map::Entry, fmt::Debug};
+use tracing::{debug, error, warn};
 
 pub mod in_flight_recorder;
 pub mod manager;

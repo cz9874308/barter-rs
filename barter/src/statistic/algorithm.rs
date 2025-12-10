@@ -1,9 +1,68 @@
-/// Grouping of [Welford Online](https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm)
-/// algorithms for calculating running values such as mean and variance in one pass through.
+//! Algorithm 统计算法模块
+//!
+//! 本模块提供了用于分析数据集的统计算法。
+//! 主要包括 Welford Online 算法，用于单次遍历计算运行中的均值和方差。
+//!
+//! # 核心概念
+//!
+//! - **Welford Online 算法**: 单次遍历计算均值和方差的在线算法
+//! - **均值计算**: 增量更新均值
+//! - **方差计算**: 样本方差和总体方差
+
+/// [Welford Online](https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm)
+/// 算法集合，用于单次遍历计算运行中的值，如均值和方差。
+///
+/// Welford Online 算法是一种在线算法，可以在单次遍历数据时计算均值和方差，
+/// 不需要存储所有数据点。这对于处理大量数据或流式数据非常有用。
+///
+/// ## 算法优势
+///
+/// - **单次遍历**: 只需遍历数据一次
+/// - **内存高效**: 不需要存储所有数据点
+/// - **数值稳定**: 减少浮点数误差累积
+///
+/// # 使用示例
+///
+/// ```rust,ignore
+/// use barter::statistic::algorithm::welford_online;
+///
+/// let mut mean = Decimal::ZERO;
+/// let mut m = Decimal::ZERO;
+/// let mut count = Decimal::ZERO;
+///
+/// for value in data {
+///     count += Decimal::ONE;
+///     let new_mean = welford_online::calculate_mean(mean, value, count);
+///     m = welford_online::calculate_recurrence_relation_m(m, mean, value, new_mean);
+///     mean = new_mean;
+/// }
+///
+/// let variance = welford_online::calculate_sample_variance(m, count);
+/// ```
 pub mod welford_online {
     use rust_decimal::Decimal;
 
-    /// Calculates the next mean.
+    /// 计算下一个均值。
+    ///
+    /// 使用 Welford Online 算法增量更新均值。
+    ///
+    /// ## 公式
+    ///
+    /// `new_mean = prev_mean + (next_value - prev_mean) / count`
+    ///
+    /// # 类型参数
+    ///
+    /// - `T`: 数值类型，必须支持减法、除法和加法赋值
+    ///
+    /// # 参数
+    ///
+    /// - `prev_mean`: 之前的均值
+    /// - `next_value`: 下一个值
+    /// - `count`: 当前计数（包括新值）
+    ///
+    /// # 返回值
+    ///
+    /// 返回更新后的均值。
     pub fn calculate_mean<T>(mut prev_mean: T, next_value: T, count: T) -> T
     where
         T: Copy + std::ops::Sub<Output = T> + std::ops::Div<Output = T> + std::ops::AddAssign,
@@ -12,7 +71,24 @@ pub mod welford_online {
         prev_mean
     }
 
-    /// Calculates the next Welford Online recurrence relation M.
+    /// 计算下一个 Welford Online 递推关系 M。
+    ///
+    /// M 是用于计算方差的中间量。
+    ///
+    /// ## 公式
+    ///
+    /// `M = prev_m + (new_value - prev_mean) * (new_value - new_mean)`
+    ///
+    /// # 参数
+    ///
+    /// - `prev_m`: 之前的 M 值
+    /// - `prev_mean`: 之前的均值
+    /// - `new_value`: 新值
+    /// - `new_mean`: 新的均值
+    ///
+    /// # 返回值
+    ///
+    /// 返回更新后的 M 值。
     pub fn calculate_recurrence_relation_m(
         prev_m: Decimal,
         prev_mean: Decimal,
@@ -22,8 +98,22 @@ pub mod welford_online {
         prev_m + ((new_value - prev_mean) * (new_value - new_mean))
     }
 
-    /// Calculates the next unbiased 'Sample' Variance using Bessel's correction (count - 1), and the
-    /// Welford Online recurrence relation M.
+    /// 使用 Bessel 校正（count - 1）和 Welford Online 递推关系 M 计算下一个无偏"样本"方差。
+    ///
+    /// 样本方差使用 `n - 1` 作为分母，这是无偏估计。
+    ///
+    /// ## 公式
+    ///
+    /// `variance = M / (count - 1)` （当 count >= 2 时）
+    ///
+    /// # 参数
+    ///
+    /// - `recurrence_relation_m`: Welford Online 递推关系 M
+    /// - `count`: 样本数量
+    ///
+    /// # 返回值
+    ///
+    /// 返回样本方差。如果 count < 2，返回 0。
     pub fn calculate_sample_variance(recurrence_relation_m: Decimal, count: Decimal) -> Decimal {
         match count < Decimal::TWO {
             true => Decimal::ZERO,
@@ -31,7 +121,22 @@ pub mod welford_online {
         }
     }
 
-    /// Calculates the next biased 'Population' Variance using the Welford Online recurrence relation M.
+    /// 使用 Welford Online 递推关系 M 计算下一个有偏"总体"方差。
+    ///
+    /// 总体方差使用 `n` 作为分母。
+    ///
+    /// ## 公式
+    ///
+    /// `variance = M / count` （当 count >= 1 时）
+    ///
+    /// # 参数
+    ///
+    /// - `recurrence_relation_m`: Welford Online 递推关系 M
+    /// - `count`: 总体数量
+    ///
+    /// # 返回值
+    ///
+    /// 返回总体方差。如果 count < 1，返回 0。
     pub fn calculate_population_variance(
         recurrence_relation_m: Decimal,
         count: Decimal,

@@ -11,6 +11,11 @@ description = "Low-level framework for composing flexible web integrations, espe
 keywords = ["trading", "backtesting", "crypto", "stocks", "investment"]
 categories = ["accessibility", "simulation"]
 
+[lints.rust]
+# 允许 dev-dependencies 中的未使用 extern crate 警告
+# 这些依赖仅在示例/测试/基准测试中使用，不在库代码中使用
+unused_extern_crates = "allow"
+
 [dev-dependencies]
 tokio-test = { workspace = true }
 sha2 = { workspace = true }
@@ -45,7 +50,7 @@ pin-project = { workspace = true }
 # Data Structures
 indexmap = { workspace = true }
 fnv = { workspace = true }
-smol_str = { workspace = true, features = ["serde"]}
+smol_str = { workspace = true, features = ["serde"] }
 
 # Protocol
 tokio-tungstenite = { workspace = true }
