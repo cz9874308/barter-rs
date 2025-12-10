@@ -1,14 +1,13 @@
-
 # Barter-Data
-A high-performance WebSocket integration library for streaming public market data from leading cryptocurrency 
-exchanges - batteries included. It is:
-* **Easy**: Barter-Data's simple StreamBuilder interface allows for easy & quick setup (see example below!).
-* **Normalised**: Barter-Data's unified interface for consuming public WebSocket data means every Exchange returns a normalised data model.
-* **Real-Time**: Barter-Data utilises real-time WebSocket integrations enabling the consumption of normalised tick-by-tick data.
-* **Extensible**: Barter-Data is highly extensible, and therefore easy to contribute to with coding new integrations!
 
-**See: [`Barter`], [`Barter-Instrument`], [`Barter-Execution`] & [`Barter-Integration`] for
-comprehensive documentation of other Barter libraries.**
+一个用于从领先的加密货币交易所流式传输公共市场数据的高性能 WebSocket 集成库 - 开箱即用。特点：
+
+-   **简单**：Barter-Data 的简单 `StreamBuilder` 接口允许轻松快速设置（请参阅下面的示例！）。
+-   **标准化**：Barter-Data 的统一接口用于消费公共 WebSocket 数据，意味着每个交易所都返回标准化的数据模型。
+-   **实时**：Barter-Data 利用实时 WebSocket 集成，能够消费标准化的逐笔数据。
+-   **可扩展**：Barter-Data 高度可扩展，因此通过编写新的集成可以轻松贡献！
+
+**请参阅：[`Barter`]、[`Barter-Instrument`]、[`Barter-Execution`] 和 [`Barter-Integration`] 以获取其他 Barter 库的完整文档。**
 
 [![Crates.io][crates-badge]][crates-url]
 [![MIT licensed][mit-badge]][mit-url]
@@ -16,15 +15,12 @@ comprehensive documentation of other Barter libraries.**
 
 [crates-badge]: https://img.shields.io/crates/v/barter-data.svg
 [crates-url]: https://crates.io/crates/barter-data
-
 [mit-badge]: https://img.shields.io/badge/license-MIT-blue.svg
 [mit-url]: https://gitlab.com/open-source-keir/financial-modelling/trading/barter-data-rs/-/blob/main/LICENCE
-
 [discord-badge]: https://img.shields.io/discord/910237311332151317.svg?logo=discord&style=flat-square
 [discord-url]: https://discord.gg/wE7RqhnQMV
 
-[API Documentation] |
-[Chat]
+[API Documentation] | [Chat]
 
 [`Barter`]: https://crates.io/crates/barter
 [`Barter-Instrument`]: https://crates.io/crates/barter-instrument
@@ -33,18 +29,16 @@ comprehensive documentation of other Barter libraries.**
 [API Documentation]: https://docs.rs/barter-data/latest/barter_data
 [Chat]: https://discord.gg/wE7RqhnQMV
 
-## Overview
-Barter-Data is a high-performance WebSocket integration library for streaming public market data from leading cryptocurrency 
-exchanges. It presents an easy-to-use and extensible set of interfaces that can deliver normalised exchange data in real-time.
+## 概述
 
-From a user perspective, the major component is the `StreamBuilder` structures that assists in initialising an 
-arbitrary number of exchange `MarketStream`s using input `Subscription`s. Simply build your dream set of 
-`MarketStreams` and `Barter-Data` will do the rest!
+Barter-Data 是一个用于从领先的加密货币交易所流式传输公共市场数据的高性能 WebSocket 集成库。它提供了一套易于使用且可扩展的接口，可以实时提供标准化的交易所数据。
 
-### Supported Exchange Subscriptions
+从用户的角度来看，主要组件是 `StreamBuilder` 结构，它有助于使用输入的 `Subscription` 初始化任意数量的交易所 `MarketStream`。只需构建您理想的 `MarketStreams` 集合，`Barter-Data` 将完成其余工作！
 
-|        Exchange         |         Constructor Code         |               InstrumentKinds               |                SubscriptionKinds                 |
-|:-----------------------:|:--------------------------------:|:-------------------------------------------:|:------------------------------------------------:|
+### 支持的交易所订阅
+
+|         交易所          |           构造函数代码           |                  工具类型                   |                     订阅类型                     |
+| :---------------------: | :------------------------------: | :-----------------------------------------: | :----------------------------------------------: |
 |     **BinanceSpot**     |     `BinanceSpot::default()`     |                    Spot                     | PublicTrades <br> OrderBooksL1 <br> OrderBooksL2 |
 |  **BinanceFuturesUsd**  |  `BinanceFuturesUsd::default()`  |                  Perpetual                  | PublicTrades <br> OrderBooksL1 <br> OrderBooksL2 |
 |      **Bitfinex**       |            `Bitfinex`            |                    Spot                     |                   PublicTrades                   |
@@ -61,11 +55,12 @@ arbitrary number of exchange `MarketStream`s using input `Subscription`s. Simply
 |       **Kraken**        |             `Kraken`             |                    Spot                     |          PublicTrades <br> OrderBooksL1          |
 |         **Okx**         |              `Okx`               | Spot <br> Future <br> Perpetual <br> Option |                   PublicTrades                   |
 
+## 示例
 
-## Examples
-See barter-data-rs/examples for a more comprehensive selection of examples! 
+请参阅 barter-data-rs/examples 以获取更全面的示例选择！
 
-### Multi Exchange Public Trades
+### 多交易所公共交易
+
 ```rust,no_run
 use barter_data::{
     exchange::{
@@ -91,8 +86,8 @@ use futures::StreamExt;
 
 #[tokio::main]
 async fn main() {
-    // Initialise PublicTrades Streams for various exchanges
-    // '--> each call to StreamBuilder::subscribe() creates a separate WebSocket connection
+    // 为各种交易所初始化 PublicTrades 流
+    // '--> 每次调用 StreamBuilder::subscribe() 都会创建一个单独的 WebSocket 连接
     let streams = Streams::<PublicTrades>::builder()
         .subscribe([
             (BinanceSpot::default(), "btc", "usdt", InstrumentKind::Spot, PublicTrades),
@@ -138,8 +133,8 @@ async fn main() {
         .await
         .unwrap();
 
-    // Select and merge every exchange Stream using futures_util::stream::select_all
-    // Note: use `Streams.select(ExchangeId)` to interact with individual exchange streams!
+    // 使用 futures_util::stream::select_all 选择和合并每个交易所的流
+    // 注意：使用 `Streams.select(ExchangeId)` 与单个交易所流交互！
     let mut joined_stream = streams
         .select_all()
         .with_error_handler(|error| println!(format!("MarketStream generated error: {error:?}")));
@@ -150,88 +145,93 @@ async fn main() {
 }
 ```
 
-## Getting Help
-Firstly, see if the answer to your question can be found in the [API Documentation]. If the answer is not there, I'd be happy to help via [Chat] <br>
-and try answer your question via Discord.
+## 获取帮助
 
-## Support Barter Development
-Help us advance Barter's capabilities by becoming a sponsor (or supporting me with a tip!).
+首先，请查看[API 文档][API Documentation]中是否已有您问题的答案。如果找不到答案，我很乐意通过[聊天][Chat]在 Discord 上帮助您并尝试回答您的问题。
 
-Your contribution will allow me to dedicate more time to Barter, accelerating feature development and improvements.
+## 支持 Barter 开发
 
-**Please email *justastream.code@gmail.com* for all inquiries**
+通过成为赞助商（或给我小费！）来帮助我们推进 Barter 的能力。
 
-Please see [here](../README.md#support-barter-development) for more information.
+您的贡献将使我能够投入更多时间到 Barter，加速功能开发和改进。
 
-## Contributing
-Thanks in advance for helping to develop the Barter ecosystem! Please do get hesitate to get touch via the Discord 
-[Chat] to discuss development, new features, and the future roadmap.
+**请发送邮件至 *justastream.code@gmail.com* 进行所有咨询**
 
-### Adding A New Exchange Connector
-1. Add a new `Connector` trait implementation in src/exchange/<exchange_name>.mod.rs (eg/ see exchange::okx::Okx).
-2. Follow on from "Adding A New Subscription Kind For An Existing Exchange Connector" below!
+更多信息请参阅[此处](../README.md#support-barter-development)。
 
-### Adding A New SubscriptionKind For An Existing Exchange Connector
-1. Add a new `SubscriptionKind` trait implementation in src/subscription/<sub_kind_name>.rs (eg/ see subscription::trade::PublicTrades).
-2. Define the `SubscriptionKind::Event` data model (eg/ see subscription::trade::PublicTrade).
-3. Define the `MarketStream` type the exchange `Connector` will initialise for the new `SubscriptionKind`: <br>
-   ie/ `impl StreamSelector<SubscriptionKind> for <ExistingExchangeConnector> { ... }`
-4. Try to compile and follow the remaining steps!
-5. Add a barter-data-rs/examples/<sub_kind_name>_streams.rs example in the standard format :)
+## 贡献
 
-### Licence
-This project is licensed under the [MIT license].
+提前感谢您帮助开发 Barter 生态系统！请通过 Discord [聊天][Chat]联系我们，讨论开发、新功能和未来路线图。
+
+### 添加新的交易所连接器
+
+1. 在 src/exchange/<exchange_name>.mod.rs 中添加新的 `Connector` trait 实现（例如，请参阅 exchange::okx::Okx）。
+2. 按照下面的"为现有交易所连接器添加新的订阅类型"继续！
+
+### 为现有交易所连接器添加新的订阅类型
+
+1. 在 src/subscription/<sub_kind_name>.rs 中添加新的 `SubscriptionKind` trait 实现（例如，请参阅 subscription::trade::PublicTrades）。
+2. 定义 `SubscriptionKind::Event` 数据模型（例如，请参阅 subscription::trade::PublicTrade）。
+3. 定义交易所 `Connector` 将为新 `SubscriptionKind` 初始化的 `MarketStream` 类型：<br>
+   即 `impl StreamSelector<SubscriptionKind> for <ExistingExchangeConnector> { ... }`
+4. 尝试编译并按照剩余步骤操作！
+5. 以标准格式添加 barter-data-rs/examples/<sub_kind_name>\_streams.rs 示例 :)
+
+### 许可证
+
+本项目采用 [MIT 许可证][MIT license]。
 
 [MIT license]: https://github.com/barter-rs/barter-rs/blob/develop/LICENSE
 
-### Contribution License Agreement
+### 贡献许可协议
 
-Any contribution you intentionally submit for inclusion in Barter workspace crates shall be:
-1. Licensed under MIT
-2. Subject to all disclaimers and limitations of liability stated below
-3. Provided without any additional terms or conditions
-4. Submitted with the understanding that the educational-only purpose and risk warnings apply
+您有意提交以包含在 Barter 工作空间 crate 中的任何贡献均应：
 
-By submitting a contribution, you certify that you have the right to do so under these terms.
+1. 采用 MIT 许可证
+2. 受以下所有免责声明和责任限制的约束
+3. 不提供任何附加条款或条件
+4. 在理解仅用于教育目的和风险警告的前提下提交
 
-## LEGAL DISCLAIMER AND LIMITATION OF LIABILITY
+通过提交贡献，您证明您有权根据这些条款这样做。
 
-PLEASE READ THIS DISCLAIMER CAREFULLY BEFORE USING THE SOFTWARE. BY ACCESSING OR USING THE SOFTWARE, YOU ACKNOWLEDGE AND AGREE TO BE BOUND BY THE TERMS HEREIN.
+## 法律免责声明和责任限制
 
-1. EDUCATIONAL PURPOSE
-   This software and related documentation ("Software") are provided solely for educational and research purposes. The Software is not intended, designed, tested, verified or certified for commercial deployment, live trading, or production use of any kind.
+在使用本软件之前，请仔细阅读本免责声明。通过访问或使用本软件，您承认并同意受本条款的约束。
 
-2. NO FINANCIAL ADVICE
-   Nothing contained in the Software constitutes financial, investment, legal, or tax advice. No aspect of the Software should be relied upon for trading decisions or financial planning. Users are strongly advised to consult qualified professionals for investment guidance specific to their circumstances.
+1. 教育目的
+   本软件及相关文档（"软件"）仅用于教育和研究目的。本软件不适用于、未设计、未测试、未验证或未认证用于商业部署、实盘交易或任何形式的生产使用。
 
-3. ASSUMPTION OF RISK
-   Trading in financial markets, including but not limited to cryptocurrencies, securities, derivatives, and other financial instruments, carries substantial risk of loss. Users acknowledge that:
-   a) They may lose their entire investment;
-   b) Past performance does not indicate future results;
-   c) Hypothetical or simulated performance results have inherent limitations and biases.
+2. 非财务建议
+   软件中包含的任何内容均不构成财务、投资、法律或税务建议。软件的任何方面都不应被依赖用于交易决策或财务规划。强烈建议用户咨询合格的专业人士，以获得适合其情况的投资指导。
 
-4. DISCLAIMER OF WARRANTIES
-   THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED. TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE AUTHORS AND COPYRIGHT HOLDERS EXPRESSLY DISCLAIM ALL WARRANTIES, INCLUDING BUT NOT LIMITED TO:
-   a) MERCHANTABILITY
-   b) FITNESS FOR A PARTICULAR PURPOSE
-   c) NON-INFRINGEMENT
-   d) ACCURACY OR RELIABILITY OF RESULTS
-   e) SYSTEM INTEGRATION
-   f) QUIET ENJOYMENT
+3. 风险承担
+   金融市场交易，包括但不限于加密货币、证券、衍生品和其他金融工具，存在重大损失风险。用户承认：
+   a) 他们可能损失全部投资；
+   b) 过往表现不代表未来结果；
+   c) 假设或模拟的性能结果具有固有的局限性和偏差。
 
-5. LIMITATION OF LIABILITY
-   IN NO EVENT SHALL THE AUTHORS, COPYRIGHT HOLDERS, CONTRIBUTORS, OR ANY AFFILIATED PARTIES BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING BUT NOT LIMITED TO PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES, LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+4. 免责声明
+   本软件按"原样"提供，不提供任何形式的明示或暗示保证。在法律允许的最大范围内，作者和版权持有人明确否认所有保证，包括但不限于：
+   a) 适销性
+   b) 特定用途的适用性
+   c) 不侵权
+   d) 结果的准确性或可靠性
+   e) 系统集成
+   f) 安静享用
 
-6. REGULATORY COMPLIANCE
-   The Software is not registered with, endorsed by, or approved by any financial regulatory authority. Users are solely responsible for:
-   a) Determining whether their use complies with applicable laws and regulations
-   b) Obtaining any required licenses, permits, or registrations
-   c) Meeting any regulatory obligations in their jurisdiction
+5. 责任限制
+   在任何情况下，作者、版权持有人、贡献者或任何关联方均不对任何直接、间接、偶然、特殊、惩戒性或后果性损害（包括但不限于采购替代商品或服务、使用损失、数据或利润损失；或业务中断）承担责任，无论因何原因引起，也无论基于任何责任理论，无论是合同、严格责任还是侵权（包括疏忽或其他），即使已被告知此类损害的可能性。
 
-7. INDEMNIFICATION
-   Users agree to indemnify, defend, and hold harmless the authors, copyright holders, and any affiliated parties from and against any claims, liabilities, damages, losses, and expenses arising from their use of the Software.
+6. 监管合规
+   本软件未在任何金融监管机构注册、认可或批准。用户全权负责：
+   a) 确定其使用是否符合适用的法律法规
+   b) 获得任何所需的许可证、许可或注册
+   c) 满足其管辖范围内的任何监管义务
 
-8. ACKNOWLEDGMENT
-   BY USING THE SOFTWARE, USERS ACKNOWLEDGE THAT THEY HAVE READ THIS DISCLAIMER, UNDERSTOOD IT, AND AGREE TO BE BOUND BY ITS TERMS AND CONDITIONS.
+7. 赔偿
+   用户同意赔偿、辩护并使作者、版权持有人和任何关联方免受因使用本软件而产生的任何索赔、责任、损害、损失和费用。
 
-THE ABOVE LIMITATIONS MAY NOT APPLY IN JURISDICTIONS THAT DO NOT ALLOW THE EXCLUSION OF CERTAIN WARRANTIES OR LIMITATIONS OF LIABILITY.
+8. 确认
+   通过使用本软件，用户确认已阅读本免责声明，理解并同意受其条款和条件的约束。
+
+上述限制可能不适用于不允许排除某些保证或限制责任的司法管辖区。

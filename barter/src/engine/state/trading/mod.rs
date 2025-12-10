@@ -1,28 +1,85 @@
+//! Engine 交易状态模块
+//!
+//! 本模块定义了 Engine 的交易状态，用于控制 Engine 是否生成算法订单。
+//!
+//! # 核心概念
+//!
+//! - **TradingState**: 交易状态枚举，表示 Engine 是否启用交易
+//! - **Enabled**: 交易启用，Engine 会生成算法订单
+//! - **Disabled**: 交易禁用，Engine 不会生成算法订单，但仍会处理命令和更新状态
+//!
+//! # 使用场景
+//!
+//! - 控制 Engine 的交易行为
+//! - 暂停/恢复算法交易
+//! - 系统维护时禁用交易
+
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
-/// Represents the current `TradingState` of the `Engine`.
+/// 表示 `Engine` 的当前 `TradingState`（交易状态）。
 ///
-/// If `TradingState::Enabled`, the Engine will generate algorithmic orders using the
-/// `AlgoStrategy` implementation.
+/// TradingState 控制 Engine 是否生成算法订单。它有两个状态：
 ///
-/// If `TradingState::Disabled`, the Engine will continue to update it's state based on input
-/// events, but it will not generate algorithmic orders. Whilst in this state, `Commands` will
-/// still be actioned (such as 'open order', 'cancel order', 'close positions', etc.).
+/// - **Enabled**: Engine 会使用 `AlgoStrategy` 实现生成算法订单
+/// - **Disabled**: Engine 会继续基于输入事件更新状态，但不会生成算法订单。
+///   在此状态下，`Commands` 仍然会被执行（例如"开仓"、"取消订单"、"平仓"等）
+///
+/// ## 状态转换
+///
+/// 可以通过 `update()` 方法更新交易状态，该方法会返回审计记录，记录状态转换。
+///
+/// # 使用示例
+///
+/// ```rust,ignore
+/// let mut trading_state = TradingState::Disabled;
+///
+/// // 启用交易
+/// let audit = trading_state.update(TradingState::Enabled);
+/// assert_eq!(audit.prev, TradingState::Disabled);
+/// assert_eq!(audit.current, TradingState::Enabled);
+///
+/// // 禁用交易
+/// let audit = trading_state.update(TradingState::Disabled);
+/// assert_eq!(audit.prev, TradingState::Enabled);
+/// assert_eq!(audit.current, TradingState::Disabled);
+/// ```
 #[derive(
     Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Default, Deserialize, Serialize,
 )]
 pub enum TradingState {
+    /// 交易启用：Engine 会生成算法订单。
     Enabled,
+    /// 交易禁用：Engine 不会生成算法订单，但仍会处理命令和更新状态（默认状态）。
     #[default]
     Disabled,
 }
 
 impl TradingState {
-    /// Updates the Engine `TradingState`.
+    /// 更新 Engine 的 `TradingState`。
     ///
-    /// Returns a [`TradingStateUpdateAudit`] which contains a record of the previous and new
-    /// state.
+    /// 此方法更新交易状态并返回审计记录，记录状态转换。如果新状态与当前状态相同，
+    /// 仍然会记录日志（用于调试）。
+    ///
+    /// # 参数
+    ///
+    /// - `update`: 新的交易状态
+    ///
+    /// # 返回值
+    ///
+    /// 返回 [`TradingStateUpdateAudit`]，包含之前和新的状态记录。
+    ///
+    /// # 使用示例
+    ///
+    /// ```rust,ignore
+    /// let mut state = TradingState::Disabled;
+    /// let audit = state.update(TradingState::Enabled);
+    ///
+    /// // 检查是否转换到禁用状态
+    /// if audit.transitioned_to_disabled() {
+    ///     // 处理交易禁用逻辑
+    /// }
+    /// ```
     pub fn update(&mut self, update: TradingState) -> TradingStateUpdateAudit {
         let prev = *self;
         let next = match (*self, update) {
@@ -53,17 +110,43 @@ impl TradingState {
     }
 }
 
-/// Audit record of a [`TradingState`] update, containing the previous and current state.
+/// [`TradingState`] 更新的审计记录，包含之前和当前的状态。
 ///
-/// Enables upstream components to ascertain if and how the [`TradingState`] has changed.
+/// TradingStateUpdateAudit 使上游组件能够确定 [`TradingState`] 是否以及如何发生了变化。
+/// 这对于需要响应状态转换的组件（如策略、风险管理系统）非常有用。
+///
+/// # 使用场景
+///
+/// - 检测交易状态的转换
+/// - 在状态转换时执行特定逻辑
+/// - 记录状态变更历史
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct TradingStateUpdateAudit {
+    /// 之前的状态
     pub prev: TradingState,
+    /// 当前的状态
     pub current: TradingState,
 }
 
 impl TradingStateUpdateAudit {
-    /// Returns true only if the previous state was not `Disabled`, and the new state is.
+    /// 仅当之前的状态不是 `Disabled`，且新状态是 `Disabled` 时返回 `true`。
+    ///
+    /// 此方法用于检测是否转换到禁用状态，这对于需要响应交易禁用的组件非常有用。
+    ///
+    /// # 返回值
+    ///
+    /// - `true`: 如果从启用状态转换到禁用状态
+    /// - `false`: 其他情况
+    ///
+    /// # 使用示例
+    ///
+    /// ```rust,ignore
+    /// let audit = trading_state.update(TradingState::Disabled);
+    /// if audit.transitioned_to_disabled() {
+    ///     // 处理交易禁用逻辑，例如取消所有未成交订单
+    ///     cancel_all_orders();
+    /// }
+    /// ```
     pub fn transitioned_to_disabled(&self) -> bool {
         self.current == TradingState::Disabled && self.prev != TradingState::Disabled
     }

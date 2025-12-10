@@ -1,3 +1,29 @@
+//! Engine 仓位管理模块
+//!
+//! 本模块定义了仓位（Position）的数据结构和相关管理逻辑。仓位表示在特定交易对上的
+//! 持仓状态，包括持仓方向、数量、平均入场价格、盈亏等信息。
+//!
+//! # 核心概念
+//!
+//! - **Position**: 当前持仓，表示在特定交易对上的开仓状态
+//! - **PositionManager**: 仓位管理器，管理当前仓位
+//! - **PositionExited**: 已平仓的仓位，包含完整的交易历史
+//! - **PnL**: 盈亏计算（已实现盈亏和未实现盈亏）
+//!
+//! # 仓位操作
+//!
+//! - **开仓**: 从交易创建新仓位
+//! - **加仓**: 同方向交易增加仓位
+//! - **减仓**: 反向交易减少仓位
+//! - **平仓**: 完全关闭仓位
+//! - **翻仓**: 关闭当前仓位并开立反向仓位
+//!
+//! # 盈亏计算
+//!
+//! - **已实现盈亏（PnL Realised）**: 已平仓部分的盈亏
+//! - **未实现盈亏（PnL Unrealised）**: 当前持仓的估算盈亏
+//! - **手续费**: 入场和出场手续费分别计算
+
 use barter_execution::trade::{AssetFees, Trade, TradeId};
 use barter_instrument::{
     Side,
@@ -11,8 +37,34 @@ use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use tracing::error;
 
+/// 仓位管理器，管理当前仓位状态。
+///
+/// PositionManager 负责跟踪和管理当前仓位。它维护一个可选的当前仓位，
+/// 当仓位被完全平仓时，返回 `PositionExited`。
+///
+/// ## 类型参数
+///
+/// - `InstrumentKey`: 交易对键类型，默认为 `InstrumentIndex`
+///
+/// ## 使用场景
+///
+/// - 跟踪当前持仓状态
+/// - 处理交易更新仓位
+/// - 管理仓位生命周期
+///
+/// # 使用示例
+///
+/// ```rust,ignore
+/// let mut position_manager = PositionManager::default();
+///
+/// // 从交易创建仓位
+/// if let Some(position_exited) = position_manager.update_from_trade(&trade) {
+///     // 处理已平仓的仓位
+/// }
+/// ```
 #[derive(Debug, Clone, PartialEq, PartialOrd, Deserialize, Serialize, Constructor)]
 pub struct PositionManager<InstrumentKey = InstrumentIndex> {
+    /// 当前仓位（如果存在）
     pub current: Option<Position<QuoteAsset, InstrumentKey>>,
 }
 
@@ -23,12 +75,38 @@ impl<InstrumentKey> Default for PositionManager<InstrumentKey> {
 }
 
 impl<InstrumentKey> PositionManager<InstrumentKey> {
-    /// Updates the current position state based on a new trade.
+    /// 基于新交易更新当前仓位状态。
     ///
-    /// This method handles:
-    /// - Opening a new position if none exists
-    /// - Updating an existing position (increase/decrease/close)
-    /// - Handling position flips (close existing & open new with any remaining trade quantity)
+    /// 此方法处理各种仓位操作场景：
+    ///
+    /// - **开仓**: 如果当前没有仓位，从交易创建新仓位
+    /// - **加仓**: 如果交易方向与当前仓位相同，增加仓位数量
+    /// - **减仓**: 如果交易方向与当前仓位相反，减少仓位数量（部分平仓）
+    /// - **平仓**: 如果交易完全抵消当前仓位，关闭仓位
+    /// - **翻仓**: 如果交易数量超过当前仓位，关闭当前仓位并开立反向仓位
+    ///
+    /// # 参数
+    ///
+    /// - `trade`: 新交易
+    ///
+    /// # 返回值
+    ///
+    /// - `Some(PositionExited)`: 如果仓位被完全平仓
+    /// - `None`: 如果仓位仍然存在或新开仓
+    ///
+    /// # 类型约束
+    ///
+    /// - `InstrumentKey`: 必须实现 `Debug + Clone + PartialEq`
+    ///
+    /// # 使用示例
+    ///
+    /// ```rust,ignore
+    /// // 处理交易更新仓位
+    /// if let Some(position_exited) = position_manager.update_from_trade(&trade) {
+    ///     // 处理已平仓的仓位
+    ///     println!("Position closed: {:?}", position_exited);
+    /// }
+    /// ```
     pub fn update_from_trade(
         &mut self,
         trade: &Trade<QuoteAsset, InstrumentKey>,
@@ -38,12 +116,11 @@ impl<InstrumentKey> PositionManager<InstrumentKey> {
     {
         let (current, closed) = match self.current.take() {
             Some(position) => {
-                // Update current Position, maybe closing it, and maybe opening a new Position
-                // with leftover trade.quantity
+                // 更新当前仓位，可能会关闭它，并可能用剩余的交易数量开立新仓位
                 position.update_from_trade(trade)
             }
             None => {
-                // No current Position, so enter a new one with Trade
+                // 当前没有仓位，所以从交易创建新仓位
                 (Some(Position::from(trade)), None)
             }
         };
@@ -54,13 +131,34 @@ impl<InstrumentKey> PositionManager<InstrumentKey> {
     }
 }
 
-/// Represents an open trading position for a specific instrument.
+/// 表示特定交易对的开放交易仓位。
 ///
-/// # Type Parameters
-/// - `AssetKey`: The type representing the asset used for fees (e.g. AssetIndex, QuoteAsset, etc.)
-/// - `InstrumentKey`: The type identifying the traded instrument (e.g. InstrumentIndex, etc.)
+/// Position 表示在特定交易对上的当前持仓状态，包括持仓方向、数量、平均入场价格、
+/// 盈亏等信息。仓位可以通过交易进行更新（加仓、减仓、平仓、翻仓）。
 ///
-/// # Examples
+/// ## 类型参数
+///
+/// - `AssetKey`: 用于表示手续费资产的类型（例如 `AssetIndex`, `QuoteAsset` 等）
+/// - `InstrumentKey`: 用于标识交易对的类型（例如 `InstrumentIndex` 等）
+///
+/// ## 仓位状态
+///
+/// - **持仓方向**: `Side::Buy` 表示做多（LONG），`Side::Sell` 表示做空（SHORT）
+/// - **持仓数量**: `quantity_abs` 表示当前绝对持仓数量
+/// - **最大持仓**: `quantity_abs_max` 表示历史最大持仓数量
+/// - **平均入场价**: `price_entry_average` 表示所有加仓交易的数量加权平均价格
+///
+/// ## 盈亏计算
+///
+/// - **已实现盈亏**: `pnl_realised` 表示已平仓部分的累计盈亏（包含手续费）
+/// - **未实现盈亏**: `pnl_unrealised` 表示当前持仓的估算盈亏（包含估算的出场手续费）
+///
+/// ## 手续费
+///
+/// - **入场手续费**: `fees_enter` 表示开仓和加仓时累计支付的手续费
+/// - **出场手续费**: `fees_exit` 表示减仓和平仓时累计支付的手续费
+///
+/// # 使用示例
 /// ## Partially Reduce LONG Position
 /// ```rust
 /// use barter::engine::state::position::Position;
@@ -164,66 +262,106 @@ impl<InstrumentKey> PositionManager<InstrumentKey> {
 /// ```
 #[derive(Debug, Clone, PartialEq, PartialOrd, Deserialize, Serialize, Constructor)]
 pub struct Position<AssetKey = AssetIndex, InstrumentKey = InstrumentIndex> {
-    /// [`Position`] Instrument identifier (eg/ InstrumentIndex, InstrumentNameInternal, etc.).
+    /// 仓位对应的交易对标识符（例如 `InstrumentIndex`, `InstrumentNameInternal` 等）。
     pub instrument: InstrumentKey,
 
-    /// [`Position`] direction (Side::Buy => LONG, Side::Sell => SHORT).
+    /// 仓位方向（`Side::Buy` => 做多 LONG，`Side::Sell` => 做空 SHORT）。
     pub side: Side,
 
-    /// Volume-weighted average entry price across all [`Position`] increasing [`Trade`]s.
+    /// 所有加仓交易的数量加权平均入场价格。
+    ///
+    /// 当加仓时，使用公式计算新的平均价格：
+    /// `(当前平均价格 * 当前数量 + 新交易价格 * 新交易数量) / (当前数量 + 新交易数量)`
     pub price_entry_average: Decimal,
 
-    /// Current absolute [`Position`] quantity.
+    /// 当前绝对仓位数量。
+    ///
+    /// 这是当前持仓的绝对数量，无论方向如何都是正数。
     pub quantity_abs: Decimal,
 
-    /// Maximum absolute [`Position`] quantity reached by all entry/increase [`Trade`]s.
+    /// 所有开仓/加仓交易达到的最大绝对仓位数量。
+    ///
+    /// 此值记录仓位的历史峰值，用于计算手续费比例等。
     pub quantity_abs_max: Decimal,
 
-    /// Estimated unrealised PnL generated from closing the remaining [`Position`] `quantity_abs`.
+    /// 估算的未实现盈亏，通过以当前价格平仓剩余 `quantity_abs` 计算得出。
     ///
-    /// Note this includes estimated exit fees.
+    /// 注意：此值包含估算的出场手续费。
+    ///
+    /// 未实现盈亏的计算公式：
+    /// - 做多：`(当前价格 - 平均入场价格) * 数量 - 估算出场手续费`
+    /// - 做空：`(平均入场价格 - 当前价格) * 数量 - 估算出场手续费`
     pub pnl_unrealised: Decimal,
 
-    /// Cumulative realised PnL from any partially closed [`Position`] `quantity_abs_max`.
+    /// 从任何部分平仓的累计已实现盈亏。
     ///
-    /// Note this includes fees.
+    /// 注意：此值包含手续费。
+    ///
+    /// 已实现盈亏是实际平仓时产生的盈亏，与未实现盈亏不同，这是已经确认的盈亏。
     pub pnl_realised: Decimal,
 
-    /// Cumulative fees paid when entering/increasing [`Position`] quantity.
+    /// 开仓/加仓时累计支付的手续费。
     pub fees_enter: AssetFees<AssetKey>,
 
-    /// Cumulative fees paid when exiting/reducing [`Position`] quantity.
+    /// 减仓/平仓时累计支付的手续费。
     pub fees_exit: AssetFees<AssetKey>,
 
-    /// Timestamp of [`Trade`] that triggered the initial [`Position`] entry.
+    /// 触发初始仓位开仓的交易时间戳。
     pub time_enter: DateTime<Utc>,
 
-    /// Timestamp of most recent [`Position`] update.
+    /// 最近一次仓位更新的时间戳。
     ///
-    /// Note this could be an update triggered by a [`Trade`], or a `pnl_unrealised` update by a
-    /// new market price.
+    /// 注意：这可能是由交易触发的更新，也可能是由新市场价格触发的 `pnl_unrealised` 更新。
     pub time_exchange_update: DateTime<Utc>,
 
-    /// [`TradeId`]s of all the [`Trade`]s associated with this [`Position`].
+    /// 与此仓位相关的所有交易的 [`TradeId`] 列表。
+    ///
+    /// 包括开仓、加仓、减仓、平仓等所有相关交易。
     pub trades: Vec<TradeId>,
 }
 
 impl<InstrumentKey> Position<QuoteAsset, InstrumentKey> {
-    /// Updates the [`Position`] state based on a new [`Trade`].
+    /// 基于新交易更新仓位状态。
     ///
-    /// This method handles various scenarios:
-    /// - Increasing an existing [`Position`] (same [`Side`] [`Trade`]).
-    /// - Reducing an existing [`Position`] (opposite [`Side`], partially closing some quantity).
-    /// - Closing a [`Position`] exactly (opposite [`Side`], fully closing quantity).
-    /// - Flipping a [`Position`] - closing and opening a new [`Position`] on the opposite [`Side`].
+    /// 此方法处理各种仓位操作场景：
     ///
-    /// # Arguments
-    /// * `trade` - The new trade to process
+    /// - **加仓**: 如果交易方向与当前仓位相同，增加仓位数量并更新平均入场价格
+    /// - **减仓**: 如果交易方向与当前仓位相反且数量小于当前仓位，减少仓位数量（部分平仓）
+    /// - **平仓**: 如果交易方向与当前仓位相反且数量等于当前仓位，完全关闭仓位
+    /// - **翻仓**: 如果交易方向与当前仓位相反且数量大于当前仓位，关闭当前仓位并开立反向仓位
     ///
-    /// # Returns
-    /// A tuple containing:
-    /// - `Option<Position>`: The updated [`Position`], unless it was exactly closed.
-    /// - `Option<PositionExited>`: The closed [`PositionExited`], if the [`Position`] was closed.
+    /// ## 处理逻辑
+    ///
+    /// 1. **验证交易对**: 确保交易属于同一交易对
+    /// 2. **记录交易ID**: 将交易ID添加到仓位交易列表
+    /// 3. **根据方向处理**: 根据交易方向与仓位方向的关系执行相应操作
+    /// 4. **更新状态**: 更新数量、价格、盈亏、手续费等状态
+    ///
+    /// # 参数
+    ///
+    /// - `trade`: 要处理的新交易
+    ///
+    /// # 返回值
+    ///
+    /// 返回一个元组，包含：
+    /// - `Option<Position>`: 更新后的仓位，如果仓位被完全平仓则为 `None`
+    /// - `Option<PositionExited>`: 如果仓位被关闭，返回已平仓的仓位信息
+    ///
+    /// # 类型约束
+    ///
+    /// - `InstrumentKey`: 必须实现 `Debug + Clone + PartialEq`
+    ///
+    /// # 使用示例
+    ///
+    /// ```rust,ignore
+    /// // 加仓
+    /// let (updated, closed) = position.update_from_trade(&buy_trade);
+    /// // updated 包含更新后的仓位，closed 为 None
+    ///
+    /// // 平仓
+    /// let (updated, closed) = position.update_from_trade(&sell_trade);
+    /// // updated 为 None，closed 包含已平仓的仓位信息
+    /// ```
     pub fn update_from_trade(
         mut self,
         trade: &Trade<QuoteAsset, InstrumentKey>,
@@ -234,7 +372,7 @@ impl<InstrumentKey> Position<QuoteAsset, InstrumentKey> {
     where
         InstrumentKey: Debug + Clone + PartialEq,
     {
-        // Sanity check
+        // 合理性检查：确保交易属于同一交易对
         if self.instrument != trade.instrument {
             error!(
                 position = ?self,
@@ -244,12 +382,12 @@ impl<InstrumentKey> Position<QuoteAsset, InstrumentKey> {
             return (Some(self), None);
         }
 
-        // Add TradeId to current Position
+        // 将交易ID添加到当前仓位的交易列表
         self.trades.push(trade.id.clone());
 
         use Side::*;
         match (self.side, trade.side) {
-            // Increase LONG/SHORT Position
+            // 加仓：增加 LONG/SHORT 仓位
             (Buy, Buy) | (Sell, Sell) => {
                 self.update_price_entry_average(trade);
                 self.quantity_abs += trade.quantity.abs();
@@ -263,7 +401,7 @@ impl<InstrumentKey> Position<QuoteAsset, InstrumentKey> {
 
                 (Some(self), None)
             }
-            // Reduce LONG/SHORT Position
+            // 减仓：减少 LONG/SHORT 仓位（部分平仓）
             (Buy, Sell) | (Sell, Buy) if self.quantity_abs > trade.quantity.abs() => {
                 // Update pnl_realised
                 self.update_pnl_realised(trade.quantity, trade.price, trade.fees.fees);
@@ -278,7 +416,7 @@ impl<InstrumentKey> Position<QuoteAsset, InstrumentKey> {
 
                 (Some(self), None)
             }
-            // Close LONG/SHORT Position (exactly)
+            // 平仓：完全关闭 LONG/SHORT 仓位
             (Buy, Sell) | (Sell, Buy) if self.quantity_abs == trade.quantity.abs() => {
                 self.quantity_abs -= trade.quantity.abs();
                 self.fees_exit.fees += trade.fees.fees;
@@ -289,9 +427,9 @@ impl<InstrumentKey> Position<QuoteAsset, InstrumentKey> {
                 (None, Some(PositionExited::from(self)))
             }
 
-            // Close LONG/SHORT Position & open SHORT/LONG with remaining trade.quantity
+            // 翻仓：关闭 LONG/SHORT 仓位并用剩余的交易数量开立 SHORT/LONG 仓位
             (Buy, Sell) | (Sell, Buy) if self.quantity_abs < trade.quantity.abs() => {
-                // Trade flips Position, so generate theoretical initial Trade for next Position
+                // 交易翻仓，所以为下一个仓位生成理论上的初始交易
                 let next_position_quantity = trade.quantity.abs() - self.quantity_abs;
                 let next_position_fee_enter =
                     trade.fees.fees * (next_position_quantity / trade.quantity.abs());
@@ -327,9 +465,17 @@ impl<InstrumentKey> Position<QuoteAsset, InstrumentKey> {
         }
     }
 
-    /// Updates the volume-weighted average entry price of the [`Position`].
+    /// 更新仓位的数量加权平均入场价格。
     ///
-    /// Internally uses the logic defined in [`calculate_price_entry_average`].
+    /// 此方法在加仓时调用，使用 [`calculate_price_entry_average`] 中定义的逻辑计算新的平均价格。
+    ///
+    /// # 参数
+    ///
+    /// - `trade`: 加仓交易
+    ///
+    /// # 工作原理
+    ///
+    /// 使用公式：`(当前平均价格 * 当前数量 + 新交易价格 * 新交易数量) / (当前数量 + 新交易数量)`
     fn update_price_entry_average(&mut self, trade: &Trade<QuoteAsset, InstrumentKey>) {
         self.price_entry_average = calculate_price_entry_average(
             self.price_entry_average,
@@ -339,11 +485,31 @@ impl<InstrumentKey> Position<QuoteAsset, InstrumentKey> {
         );
     }
 
-    /// Update [`Position::pnl_unrealised`](Position) with the estimated PnL from closing
-    /// the [`Position`] at the provided price.
+    /// 使用提供的价格更新 [`Position::pnl_unrealised`](Position)（未实现盈亏）。
     ///
-    /// Note that this could be called with a recent [`Trade`] price, or a price generated from
-    /// a model based on public market data.
+    /// 此方法计算如果以提供的价格平仓当前仓位时的估算盈亏。
+    ///
+    /// ## 使用场景
+    ///
+    /// - 使用最近的交易价格更新未实现盈亏
+    /// - 使用基于公开市场数据的模型价格更新未实现盈亏
+    /// - 实时计算仓位的浮动盈亏
+    ///
+    /// ## 注意事项
+    ///
+    /// - 此值包含估算的出场手续费
+    /// - 未实现盈亏会随着市场价格变化而变化
+    ///
+    /// # 参数
+    ///
+    /// - `price`: 用于计算未实现盈亏的价格（通常是当前市场价格）
+    ///
+    /// # 使用示例
+    ///
+    /// ```rust,ignore
+    /// // 使用当前市场价格更新未实现盈亏
+    /// position.update_pnl_unrealised(current_market_price);
+    /// ```
     pub fn update_pnl_unrealised(&mut self, price: Decimal) {
         self.pnl_unrealised = calculate_pnl_unrealised(
             self.side,
@@ -355,14 +521,33 @@ impl<InstrumentKey> Position<QuoteAsset, InstrumentKey> {
         );
     }
 
-    /// Updates the [`Position`] `pnl_realised` from a closed portion of the [`Position`] quantity.
+    /// 从已平仓的仓位数量更新 [`Position`] 的 `pnl_realised`（已实现盈亏）。
+    ///
+    /// 此方法在减仓或平仓时调用，计算已平仓部分的盈亏并累加到总已实现盈亏中。
+    ///
+    /// # 参数
+    ///
+    /// - `closed_quantity`: 已平仓的数量
+    /// - `closed_price`: 平仓价格
+    /// - `closed_fee`: 平仓手续费
+    ///
+    /// # 工作原理
+    ///
+    /// 使用 [`calculate_pnl_realised`] 计算已平仓部分的盈亏，然后累加到 `pnl_realised`。
+    ///
+    /// # 使用示例
+    ///
+    /// ```rust,ignore
+    /// // 部分平仓后更新已实现盈亏
+    /// position.update_pnl_realised(closed_quantity, closed_price, closed_fee);
+    /// ```
     pub fn update_pnl_realised(
         &mut self,
         closed_quantity: Decimal,
         closed_price: Decimal,
         closed_fee: Decimal,
     ) {
-        // Update total Position pnl_realised with closed quantity PnL
+        // 使用已平仓数量的盈亏更新总仓位的已实现盈亏
         self.pnl_realised += calculate_pnl_realised(
             self.side,
             self.price_entry_average,
@@ -397,47 +582,60 @@ where
     }
 }
 
-/// Represents a fully closed trading [`Position`] for a specific instrument.
+/// 表示已完全平仓的交易仓位。
 ///
-/// Contains the final state and history of a [`Position`] that has been completely closed.
+/// PositionExited 包含已完全平仓的仓位的最终状态和历史记录。它用于记录和分析
+/// 已完成的交易，包括最终的盈亏、手续费、交易历史等信息。
 ///
-/// # Type Parameters
-/// - `AssetKey`: The type representing the asset used for fees (e.g. AssetIndex, QuoteAsset, etc.)
-/// - `InstrumentKey`: The type identifying the traded instrument (e.g. InstrumentIndex, etc.)
+/// ## 类型参数
+///
+/// - `AssetKey`: 用于表示手续费资产的类型（例如 `AssetIndex`, `QuoteAsset` 等）
+/// - `InstrumentKey`: 用于标识交易对的类型（例如 `InstrumentIndex` 等）
+///
+/// ## 与 Position 的区别
+///
+/// - `Position`: 表示当前开放的仓位，可以继续更新
+/// - `PositionExited`: 表示已完全平仓的仓位，是最终状态，不可再更新
+///
+/// # 使用场景
+///
+/// - 记录已完成的交易
+/// - 分析交易绩效
+/// - 生成交易报告
 #[derive(
     Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Deserialize, Serialize, Constructor,
 )]
 pub struct PositionExited<AssetKey, InstrumentKey = InstrumentIndex> {
-    /// Closed [`Position`] Instrument identifier (eg/ InstrumentIndex, InstrumentNameInternal, etc.).
+    /// 已平仓的仓位对应的交易对标识符（例如 `InstrumentIndex`, `InstrumentNameInternal` 等）。
     pub instrument: InstrumentKey,
 
-    /// Closed [`Position`] direction (Side::Buy => LONG, Side::Sell => SHORT).
+    /// 已平仓的仓位方向（`Side::Buy` => 做多 LONG，`Side::Sell` => 做空 SHORT）。
     pub side: Side,
 
-    /// Volume-weighted average entry price across all [`Position`] increasing [`Trade`]s.
+    /// 所有加仓交易的数量加权平均入场价格。
     pub price_entry_average: Decimal,
 
-    /// Maximum absolute [`Position`] quantity reached by all entry/increase [`Trade`]s.
+    /// 所有开仓/加仓交易达到的最大绝对仓位数量。
     pub quantity_abs_max: Decimal,
 
-    /// Cumulative realised PnL from closing the full [`Position`] `quantity_abs_max`.
+    /// 从完全平仓整个 `quantity_abs_max` 仓位产生的累计已实现盈亏。
     ///
-    /// Note this includes fees.
+    /// 注意：此值包含手续费。
     pub pnl_realised: Decimal,
 
-    /// Cumulative fees paid when entering the [`Position`].
+    /// 开仓时累计支付的手续费。
     pub fees_enter: AssetFees<AssetKey>,
 
-    /// Cumulative fees paid when exiting the [`Position`].
+    /// 平仓时累计支付的手续费。
     pub fees_exit: AssetFees<AssetKey>,
 
-    /// Timestamp of [`Trade`] that triggered the initial [`Position`] entry.
+    /// 触发初始仓位开仓的交易时间戳。
     pub time_enter: DateTime<Utc>,
 
-    /// Timestamp of [`Trade`] that triggered the closing of the [`Position`].
+    /// 触发仓位平仓的交易时间戳。
     pub time_exit: DateTime<Utc>,
 
-    /// [`TradeId`]s of all the [`Trade`]s associated with the closed [`Position`].
+    /// 与此已平仓仓位相关的所有交易的 [`TradeId`] 列表。
     pub trades: Vec<TradeId>,
 }
 
@@ -460,17 +658,28 @@ impl<AssetKey, InstrumentKey> From<Position<AssetKey, InstrumentKey>>
     }
 }
 
-/// Calculates the volume-weighted average entry price when adding a [`Trade`] data to existing
-/// [`Position`] data.
+/// 计算在现有仓位数据中添加交易数据后的数量加权平均入场价格。
 ///
-/// This function uses the formula: <br>
-/// (current_value + trade_value) / (current_quantity + trade_quantity)
+/// 此函数使用公式：`(当前价值 + 交易价值) / (当前数量 + 交易数量)`
 ///
-/// # Arguments
-/// * `current_price_entry_average` - The current average entry price of the position
-/// * `current_quantity_abs` - The current absolute quantity of the position
-/// * `trade_price` - The price of the new trade
-/// * `trade_quantity_abs` - The absolute quantity of the new trade
+/// 其中：
+/// - 当前价值 = `current_price_entry_average * current_quantity_abs`
+/// - 交易价值 = `trade_price * trade_quantity_abs`
+///
+/// # 参数
+///
+/// - `current_price_entry_average`: 仓位的当前平均入场价格
+/// - `current_quantity_abs`: 仓位的当前绝对数量
+/// - `trade_price`: 新交易的价格
+/// - `trade_quantity_abs`: 新交易的绝对数量
+///
+/// # 返回值
+///
+/// 返回计算后的新的平均入场价格。
+///
+/// # 边界情况
+///
+/// - 如果当前数量和新交易数量都为 0，返回 0
 fn calculate_price_entry_average(
     current_price_entry_average: Decimal,
     current_quantity_abs: Decimal,
@@ -487,8 +696,31 @@ fn calculate_price_entry_average(
     (current_value + trade_value) / (current_quantity_abs + trade_quantity_abs)
 }
 
-/// Calculate the estimated unrealised PnL from closing a [`Position`] `quantity_abs` at the
-/// provided price.
+/// 计算以提供的价格平仓仓位 `quantity_abs` 时的估算未实现盈亏。
+///
+/// 此函数计算如果以指定价格平仓当前持仓数量时的估算盈亏，包括估算的出场手续费。
+///
+/// ## 计算公式
+///
+/// - **做多（LONG）**: `(当前价格 - 平均入场价格) * 数量 - 估算出场手续费`
+/// - **做空（SHORT）**: `(平均入场价格 - 当前价格) * 数量 - 估算出场手续费`
+///
+/// ## 手续费估算
+///
+/// 使用 `approximate_remaining_exit_fees` 函数估算出场手续费，基于入场手续费的比例。
+///
+/// # 参数
+///
+/// - `position_side`: 仓位方向（`Side::Buy` 或 `Side::Sell`）
+/// - `price_entry_average`: 平均入场价格
+/// - `quantity_abs`: 当前绝对持仓数量
+/// - `quantity_abs_max`: 历史最大持仓数量（用于计算手续费比例）
+/// - `fees_enter`: 入场手续费
+/// - `price`: 用于计算盈亏的价格（通常是当前市场价格）
+///
+/// # 返回值
+///
+/// 返回估算的未实现盈亏（包含估算的出场手续费）。
 pub fn calculate_pnl_unrealised(
     position_side: Side,
     price_entry_average: Decimal,
@@ -522,8 +754,26 @@ fn approximate_remaining_exit_fees(
     (quantity_abs / quantity_abs_max) * fees_enter
 }
 
-/// Calculate the realised PnL generated from closing the provided [`Position`] quantity, at the
-/// specified price and closing fee.
+/// 计算以指定价格和手续费平仓提供的仓位数量时产生的已实现盈亏。
+///
+/// 此函数计算实际平仓时的盈亏，与未实现盈亏不同，这是已经确认的盈亏。
+///
+/// ## 计算公式
+///
+/// - **做多（LONG）**: `(平仓价格 - 平均入场价格) * 平仓数量 - 平仓手续费`
+/// - **做空（SHORT）**: `(平均入场价格 - 平仓价格) * 平仓数量 - 平仓手续费`
+///
+/// # 参数
+///
+/// - `position_side`: 仓位方向（`Side::Buy` 或 `Side::Sell`）
+/// - `price_entry_average`: 平均入场价格
+/// - `closed_quantity`: 已平仓的数量
+/// - `closed_price`: 平仓价格
+/// - `closed_fee`: 平仓手续费
+///
+/// # 返回值
+///
+/// 返回已实现盈亏（已扣除手续费）。
 pub fn calculate_pnl_realised(
     position_side: Side,
     price_entry_average: Decimal,
@@ -541,11 +791,36 @@ pub fn calculate_pnl_realised(
     }
 }
 
-/// Calculate the PnL returns.
+/// 计算盈亏回报率。
 ///
-/// Returns = pnl_realised / cost_of_investment
+/// 此函数计算投资的回报率（ROI），公式为：`已实现盈亏 / 投资成本`
 ///
-/// See docs: <https://www.investopedia.com/articles/basics/10/guide-to-calculating-roi.asp>
+/// 其中投资成本 = `平均入场价格 * 最大持仓数量`
+///
+/// ## 参考文档
+///
+/// 参见：<https://www.investopedia.com/articles/basics/10/guide-to-calculating-roi.asp>
+///
+/// # 参数
+///
+/// - `pnl_realised`: 已实现盈亏
+/// - `price_entry_average`: 平均入场价格
+/// - `quantity_abs_max`: 最大持仓数量
+///
+/// # 返回值
+///
+/// 返回回报率（小数形式，例如 0.1 表示 10% 的回报率）。
+///
+/// # 使用示例
+///
+/// ```rust,ignore
+/// let return_rate = calculate_pnl_return(
+///     dec!(100.0),  // 已实现盈亏
+///     dec!(50.0),   // 平均入场价格
+///     dec!(2.0),    // 最大持仓数量
+/// );
+/// // 返回 1.0，表示 100% 的回报率
+/// ```
 pub fn calculate_pnl_return(
     pnl_realised: Decimal,
     price_entry_average: Decimal,

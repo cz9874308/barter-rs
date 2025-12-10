@@ -15,28 +15,76 @@ use serde::{Deserialize, Serialize};
 use std::{collections::hash_map::Entry, fmt::Debug};
 use tracing::{debug, error, warn};
 
+//! Engine 订单管理模块
+//!
+//! 本模块定义了同步订单管理器，用于跟踪活跃交易所订单的生命周期。
+//!
+//! # 核心概念
+//!
+//! - **Orders**: 订单管理器，维护活跃订单的映射
+//! - **OrderManager**: 订单管理 Trait，定义订单管理接口
+//! - **InFlightRequestRecorder**: 在途请求记录器 Trait，记录在途订单请求
+//!
+//! # 订单状态转换
+//!
+//! 订单通常按以下状态转换：
+//! 1. **OpenInFlight** - 初始订单请求已发送到交易所
+//! 2. **Open** - 订单已在交易所确认开仓
+//! 3. **CancelInFlight** - 取消请求已发送到交易所
+//! 4. **Cancelled/Expired/FullyFilled** - 终止状态，一旦达到，订单不再被跟踪
+//!
+//! # 使用场景
+//!
+//! - 跟踪每个交易对的活跃订单
+//! - 管理订单状态转换
+//! - 处理订单快照和取消响应
+
 pub mod in_flight_recorder;
 pub mod manager;
 
-/// Synchronous order manager that tracks the lifecycle of active exchange orders.
+/// 同步订单管理器，跟踪活跃交易所订单的生命周期。
 ///
-/// The `Orders` struct maintains a `FnvHashMap` of orders keyed by their [`ClientOrderId`].
+/// `Orders` 结构维护一个以 [`ClientOrderId`] 为键的 `FnvHashMap` 订单映射。
 ///
-/// Implements the [`OrderManager`] and [`InFlightRequestRecorder`] traits.
+/// 实现了 [`OrderManager`] 和 [`InFlightRequestRecorder`] traits。
 ///
-/// A distinct instance of `Orders` is used in the engine
-/// [`InstrumentState`](super::instrument::InstrumentState) to track the active orders for
-/// each instrument, however it could be used to track global orders if [`ClientOrderId`]
-/// is globally unique.
+/// ## 使用场景
 ///
-/// # State Transitions
-/// Orders tend to progress through the following states:
-/// 1. OpenInFlight - Initial order request sent to exchange
-/// 2. Open - Order confirmed as open on exchange
-/// 3. CancelInFlight - Cancellation request sent to exchange
-/// 4. Cancelled/Expired/FullyFilled - Terminal states, once achieved order is no longer tracked.
+/// 在 Engine 的 [`InstrumentState`](super::instrument::InstrumentState) 中使用 `Orders` 的
+/// 独立实例来跟踪每个交易对的活跃订单。如果 [`ClientOrderId`] 是全局唯一的，也可以用于
+/// 跟踪全局订单。
+///
+/// ## 订单状态转换
+///
+/// 订单通常按以下状态转换：
+///
+/// 1. **OpenInFlight** - 初始订单请求已发送到交易所
+/// 2. **Open** - 订单已在交易所确认开仓
+/// 3. **CancelInFlight** - 取消请求已发送到交易所
+/// 4. **Cancelled/Expired/FullyFilled** - 终止状态，一旦达到，订单不再被跟踪
+///
+/// ## 类型参数
+///
+/// - `ExchangeKey`: 交易所键类型，默认为 `ExchangeIndex`
+/// - `InstrumentKey`: 交易对键类型，默认为 `InstrumentIndex`
+///
+/// # 使用示例
+///
+/// ```rust,ignore
+/// let mut orders = Orders::default();
+///
+/// // 记录在途开仓请求
+/// orders.record_in_flight_open(&order_request);
+///
+/// // 从订单快照更新
+/// orders.update_from_order_snapshot(&order_snapshot);
+///
+/// // 从取消响应更新
+/// orders.update_from_cancel_response(&cancel_response);
+/// ```
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize, Constructor)]
 pub struct Orders<ExchangeKey = ExchangeIndex, InstrumentKey = InstrumentIndex>(
+    /// 以 ClientOrderId 为键的订单映射
     pub FnvHashMap<ClientOrderId, Order<ExchangeKey, InstrumentKey, ActiveOrderState>>,
 );
 

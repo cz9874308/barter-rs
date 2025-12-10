@@ -1,36 +1,91 @@
-# Barter-Instrument
+# Barter-Macro
 
-Barter-Instrument 包含核心的交易所（Exchange）、工具（Instrument）和资产（Asset）数据结构及相关工具。
+Barter 生态系统的过程宏（proc-macro）库，用于简化 Exchange 和 SubscriptionKind 类型的序列化/反序列化实现。
 
-**请参阅：[`Barter`]、[`Barter-Data`]、[`Barter-Execution`] 和 [`Barter-Integration`] 以获取其他 Barter 库的完整文档。**
+**请参阅：[`Barter`]、[`Barter-Data`]、[`Barter-Instrument`]、[`Barter-Execution`] 和 [`Barter-Integration`] 以获取其他 Barter 库的完整文档。**
 
 [![Crates.io][crates-badge]][crates-url]
 [![MIT licensed][mit-badge]][mit-url]
 [![Discord chat][discord-badge]][discord-url]
 
-[crates-badge]: https://img.shields.io/crates/v/barter.svg
-[crates-url]: https://crates.io/crates/barter
+[crates-badge]: https://img.shields.io/crates/v/barter-macro.svg
+[crates-url]: https://crates.io/crates/barter-macro
 [mit-badge]: https://img.shields.io/badge/license-MIT-blue.svg
 [mit-url]: https://github.com/barter-rs/barter-rs/blob/develop/LICENSE
 [discord-badge]: https://img.shields.io/discord/910237311332151317.svg?logo=discord&style=flat-square
 [discord-url]: https://discord.gg/wE7RqhnQMV
 [`Barter`]: https://crates.io/crates/barter
 [`Barter-Data`]: https://crates.io/crates/barter-data
+[`Barter-Instrument`]: https://crates.io/crates/barter-instrument
 [`Barter-Execution`]: https://crates.io/crates/barter-execution
 [`Barter-Integration`]: https://crates.io/crates/barter-integration
-[API Documentation]: https://docs.rs/barter/latest/barter/
+[API Documentation]: https://docs.rs/barter-macro/latest/barter_macro/
 [Chat]: https://discord.gg/wE7RqhnQMV
 
 ## 概述
 
-Barter-Instrument 包含核心的交易所（Exchange）、工具（Instrument）和资产（Asset）数据结构及相关工具。
+Barter-Macro 提供了四个过程宏，用于自动生成 `serde::Serialize` 和 `serde::Deserialize` trait 实现：
 
-[barter-examples]: https://github.com/barter-rs/barter-rs/tree/develop/barter/examples
+-   **`DeExchange`**：为 Exchange 类型自动实现 `serde::Deserialize`，从字符串反序列化为 Exchange 实例。
+-   **`SerExchange`**：为 Exchange 类型自动实现 `serde::Serialize`，将 Exchange 序列化为其 ID 字符串。
+-   **`DeSubKind`**：为 SubscriptionKind 类型自动实现 `serde::Deserialize`，支持从 PascalCase 到 snake_case 的自动转换。
+-   **`SerSubKind`**：为 SubscriptionKind 类型自动实现 `serde::Serialize`，将类型名称转换为 snake_case 字符串。
 
-## 示例
+这些宏简化了 Barter 生态系统中 Exchange 和 SubscriptionKind 类型的序列化/反序列化实现，减少了样板代码。
 
--   请参阅[此处][barter-examples]查看 Barter-Instrument 的实际使用示例。
--   请参阅其他子模块以获取每个库的更多示例。
+## 提供的宏
+
+### `DeExchange` 和 `SerExchange`
+
+用于 Exchange 类型的序列化/反序列化。要求 Exchange 类型具有：
+
+-   一个静态 `ID` 字段（类型为 `&'static str`）
+-   实现 `Default` trait
+
+**示例：**
+
+```rust
+use barter_macro::{DeExchange, SerExchange};
+
+#[derive(Default, DeExchange, SerExchange)]
+pub struct BinanceSpot;
+
+impl BinanceSpot {
+    pub const ID: &'static str = "binance_spot";
+}
+
+// 现在 BinanceSpot 可以自动序列化/反序列化
+// 序列化: "binance_spot"
+// 反序列化: 从 "binance_spot" 字符串创建 BinanceSpot::default()
+```
+
+### `DeSubKind` 和 `SerSubKind`
+
+用于 SubscriptionKind 类型的序列化/反序列化。自动处理命名转换：
+
+-   序列化：将 PascalCase 类型名转换为 snake_case（例如 `PublicTrades` → `"public_trades"`）
+-   反序列化：从 snake_case 字符串转换为类型（例如 `"public_trades"` → `PublicTrades`）
+
+**示例：**
+
+```rust
+use barter_macro::{DeSubKind, SerSubKind};
+
+#[derive(Default, DeSubKind, SerSubKind)]
+pub struct PublicTrades;
+
+// 现在 PublicTrades 可以自动序列化/反序列化
+// 序列化: "public_trades"
+// 反序列化: 从 "public_trades" 字符串创建 PublicTrades
+```
+
+## 使用场景
+
+这些宏主要用于 Barter 生态系统内部，特别是在以下场景：
+
+-   **配置解析**：从 JSON 或其他格式的配置文件反序列化 Exchange 和 SubscriptionKind
+-   **API 响应**：序列化/反序列化 API 请求和响应中的 Exchange 和 SubscriptionKind
+-   **日志记录**：将 Exchange 和 SubscriptionKind 序列化为可读的字符串格式
 
 ## 获取帮助
 

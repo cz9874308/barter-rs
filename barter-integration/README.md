@@ -1,20 +1,20 @@
 # Barter-Integration
 
-High-performance, low-level framework for composing flexible web integrations. 
+用于构建灵活 Web 集成的高性能、底层框架。
 
-Utilised by other [`Barter`] trading ecosystem crates to build robust financial exchange integrations,
-primarily for public data collection & trade execution. It is:
-* **Low-Level**: Translates raw data streams communicated over the web into any desired data model using arbitrary data transformations.
-* **Flexible**: Compatible with any protocol (WebSocket, FIX, Http, etc.), any input/output model, and any user defined transformations.
+被其他 [`Barter`] 交易生态系统 crate 用于构建强大的金融交易所集成，主要用于公共数据收集和交易执行。特点：
 
-Core abstractions include:
-- **RestClient** providing configurable signed Http communication between client & server.
-- **ExchangeStream** providing configurable communication over any asynchronous stream protocols (WebSocket, FIX, etc.).
+-   **底层**：使用任意数据转换将通过网络通信的原始数据流转换为任何所需的数据模型。
+-   **灵活**：兼容任何协议（WebSocket、FIX、Http 等）、任何输入/输出模型以及任何用户定义的转换。
 
-Both core abstractions provide the robust glue you need to conveniently translate between server & client data models.
+核心抽象包括：
 
+-   **RestClient** 提供客户端和服务器之间可配置的签名 Http 通信。
+-   **ExchangeStream** 提供通过任何异步流协议（WebSocket、FIX 等）的可配置通信。
 
-**See: [`Barter`], [`Barter-Data`] & [`Barter-Execution`]**
+这两个核心抽象提供了您所需的强大粘合剂，可以方便地在服务器和客户端数据模型之间进行转换。
+
+**请参阅：[`Barter`]、[`Barter-Data`] 和 [`Barter-Execution`]**
 
 [![Crates.io][crates-badge]][crates-url]
 [![MIT licensed][mit-badge]][mit-url]
@@ -23,13 +23,10 @@ Both core abstractions provide the robust glue you need to conveniently translat
 
 [crates-badge]: https://img.shields.io/crates/v/barter-integration.svg
 [crates-url]: https://crates.io/crates/barter-integration
-
 [mit-badge]: https://img.shields.io/badge/license-MIT-blue.svg
 [mit-url]: https://gitlab.com/open-source-keir/financial-modelling/trading/barter-integration-rs/-/blob/main/LICENCE
-
 [actions-badge]: https://gitlab.com/open-source-keir/financial-modelling/trading/barter-integration-rs/badges/-/blob/main/pipeline.svg
 [actions-url]: https://gitlab.com/open-source-keir/financial-modelling/trading/barter-integration-rs/-/commits/main
-
 [discord-badge]: https://img.shields.io/discord/910237311332151317.svg?logo=discord&style=flat-square
 [discord-url]: https://discord.gg/wE7RqhnQMV
 
@@ -41,30 +38,33 @@ Both core abstractions provide the robust glue you need to conveniently translat
 [API Documentation]: https://docs.rs/barter-data/latest/barter_integration
 [Chat]: https://discord.gg/wE7RqhnQMV
 
-## Overview
+## 概述
 
-Barter-Integration is a high-performance, low-level, configurable framework for composing flexible web 
-integrations. 
+Barter-Integration 是一个用于构建灵活 Web 集成的高性能、底层、可配置框架。
 
 ### RestClient
-**(sync private & public Http communication)**
 
-At a high level, a `RestClient` is has a few major components that allow it to execute `RestRequests`:
-* `RequestSigner` with configurable signing logic on the target API.
-* `HttpParser` that translates API specific responses into the desired output types.
+**（同步私有和公共 Http 通信）**
+
+从高层次来看，`RestClient` 有几个主要组件，使其能够执行 `RestRequest`：
+
+-   在目标 API 上具有可配置签名逻辑的 `RequestSigner`。
+-   将 API 特定响应转换为所需输出类型的 `HttpParser`。
 
 ### ExchangeStream
-**(async communication using streaming protocols such as WebSocket and FIX)**
 
-At a high level, an `ExchangeStream` is made up of a few major components:
-* Inner Stream/Sink socket (eg/ WebSocket, FIX, etc).
-* StreamParser that is capable of parsing input protocol messages (eg/ WebSocket, FIX, etc.) as exchange
-  specific messages.
-* Transformer that transforms from exchange specific message into an iterator of the desired outputs type.
+**（使用 WebSocket 和 FIX 等流协议的异步通信）**
 
-## Examples
+从高层次来看，`ExchangeStream` 由几个主要组件组成：
 
-#### Fetch Ftx Account Balances Using Signed GET request:
+-   内部 Stream/Sink 套接字（例如 WebSocket、FIX 等）。
+-   能够将输入协议消息（例如 WebSocket、FIX 等）解析为交易所特定消息的 `StreamParser`。
+-   将交易所特定消息转换为所需输出类型迭代器的 `Transformer`。
+
+## 示例
+
+#### 使用签名 GET 请求获取 Ftx 账户余额：
+
 ```rust,no_run
 use std::borrow::Cow;
 
@@ -90,7 +90,7 @@ struct FtxSigner {
     api_key: String,
 }
 
-// Configuration required to sign every Ftx `RestRequest`
+// 为每个 Ftx `RestRequest` 签名所需的配置
 struct FtxSignConfig<'a> {
     api_key: &'a str,
     time: DateTime<Utc>,
@@ -131,7 +131,7 @@ impl Signer for FtxSigner {
         builder: RequestBuilder,
         signature: String,
     ) -> Result<reqwest::Request, SocketError> {
-        // Add Ftx required Headers & build reqwest::Request
+        // 添加 Ftx 所需的请求头并构建 reqwest::Request
         builder
             .header("FTX-KEY", config.api_key)
             .header("FTX-TS", &config.time.timestamp_millis().to_string())
@@ -148,10 +148,10 @@ impl HttpParser for FtxParser {
     type OutputError = ExecutionError;
 
     fn parse_api_error(&self, status: StatusCode, api_error: Self::ApiError) -> Self::OutputError {
-        // For simplicity, use serde_json::Value as Error and extract raw String for parsing
+        // 为简单起见，使用 serde_json::Value 作为错误并提取原始字符串进行解析
         let error = api_error.to_string();
 
-        // Parse Ftx error message to determine custom ExecutionError variant
+        // 解析 Ftx 错误消息以确定自定义 ExecutionError 变体
         match error.as_str() {
             message if message.contains("Invalid login credentials") => {
                 ExecutionError::Unauthorised(error)
@@ -173,9 +173,9 @@ enum ExecutionError {
 struct FetchBalancesRequest;
 
 impl RestRequest for FetchBalancesRequest {
-    type Response = FetchBalancesResponse; // Define Response type
-    type QueryParams = (); // FetchBalances does not require any QueryParams
-    type Body = (); // FetchBalances does not require any Body
+    type Response = FetchBalancesResponse; // 定义响应类型
+    type QueryParams = (); // FetchBalances 不需要任何 QueryParams
+    type Body = (); // FetchBalances 不需要任何 Body
 
     fn path(&self) -> Cow<'static, str> {
         Cow::Borrowed("/api/wallet/balances")
@@ -201,14 +201,14 @@ struct FtxBalance {
     total: f64,
 }
 
-/// See Barter-Execution for a comprehensive real-life example, as well as code you can use out of the
-/// box to execute trades on many exchanges.
+/// 请参阅 Barter-Execution 以获取全面的真实示例，以及您可以直接使用的代码
+/// 在多个交易所执行交易。
 #[tokio::main]
 async fn main() {
-    // HMAC-SHA256 encoded account API secret used for signing private http requests
+    // 用于签名私有 http 请求的 HMAC-SHA256 编码账户 API 密钥
     let mac: Hmac<sha2::Sha256> = Hmac::new_from_slice("api_secret".as_bytes()).unwrap();
 
-    // Build Ftx configured RequestSigner for signing http requests with hex encoding
+    // 构建用于使用十六进制编码签名 http 请求的 Ftx 配置 RequestSigner
     let request_signer = RequestSigner::new(
         FtxSigner {
             api_key: "api_key".to_string(),
@@ -217,15 +217,15 @@ async fn main() {
         HexEncoder,
     );
 
-    // Build RestClient with Ftx configuration
+    // 使用 Ftx 配置构建 RestClient
     let rest_client = RestClient::new("https://ftx.com", request_signer, FtxParser);
 
-    // Fetch Result<FetchBalancesResponse, ExecutionError>
+    // 获取 Result<FetchBalancesResponse, ExecutionError>
     let _response = rest_client.execute(FetchBalancesRequest).await;
 }
 ```
 
-#### Consume Binance Futures tick-by-tick Trades and calculate a rolling sum of volume:
+#### 消费 Binance 期货逐笔交易并计算成交量的滚动总和：
 
 ```rust,no_run
 use barter_integration::{
@@ -240,10 +240,10 @@ use std::str::FromStr;
 use tokio_tungstenite::connect_async;
 use tracing::debug;
 
-// Convenient type alias for an `ExchangeStream` utilising a tungstenite `WebSocket`
+// 使用 tungstenite `WebSocket` 的 `ExchangeStream` 的便捷类型别名
 type ExchangeWsStream<Exchange> = ExchangeStream<WebSocketSerdeParser, WebSocket, Exchange, VolumeSum>;
 
-// Communicative type alias for what the VolumeSum the Transformer is generating
+// 表示 Transformer 正在生成的 VolumeSum 的通信类型别名
 type VolumeSum = f64;
 
 #[derive(Deserialize)]
@@ -268,34 +268,34 @@ impl Transformer<VolumeSum> for StatefulTransformer {
     type OutputIter = Vec<Result<VolumeSum, SocketError>>;
 
     fn transform(&mut self, input: Self::Input) -> Self::OutputIter {
-        // Add new input Trade quantity to sum
+        // 将新的输入交易数量添加到总和
         match input {
             BinanceMessage::SubResponse { result, id } => {
                 debug!("Received SubResponse for {}: {:?}", id, result);
-                // Don't care about this for the example
+                // 此示例中不关心这个
             }
             BinanceMessage::Trade { quantity, .. } => {
-                // Add new Trade volume to internal state VolumeSum
+                // 将新的交易成交量添加到内部状态 VolumeSum
                 self.sum_of_volume += quantity;
             }
         };
 
-        // Return IntoIterator of length 1 containing the running sum of volume
+        // 返回长度为 1 的迭代器，包含成交量的运行总和
         vec![Ok(self.sum_of_volume)]
     }
 }
 
-/// See Barter-Data for a comprehensive real-life example, as well as code you can use out of the
-/// box to collect real-time public market data from many exchanges.
+/// 请参阅 Barter-Data 以获取全面的真实示例，以及您可以直接使用的代码
+/// 从多个交易所收集实时公共市场数据。
 #[tokio::main]
 async fn main() {
-    // Establish Sink/Stream communication with desired WebSocket server
+    // 与所需的 WebSocket 服务器建立 Sink/Stream 通信
     let mut binance_conn = connect_async("wss://fstream.binance.com/ws/")
         .await
         .map(|(ws_conn, _)| ws_conn)
         .expect("failed to connect");
 
-    // Send something over the socket (eg/ Binance trades subscription)
+    // 通过套接字发送内容（例如 Binance 交易订阅）
     binance_conn
         .send(WsMessage::Text(
             json!({"method": "SUBSCRIBE","params": ["btcusdt@aggTrade"],"id": 1}).to_string(),
@@ -303,28 +303,28 @@ async fn main() {
         .await
         .expect("failed to send WsMessage over socket");
 
-    // Instantiate some arbitrary Transformer to apply to data parsed from the WebSocket protocol
+    // 实例化一些任意 Transformer 以应用于从 WebSocket 协议解析的数据
     let transformer = StatefulTransformer { sum_of_volume: 0.0 };
 
-    // ExchangeWsStream includes pre-defined WebSocket Sink/Stream & WebSocket StreamParser
+    // ExchangeWsStream 包括预定义的 WebSocket Sink/Stream 和 WebSocket StreamParser
     let mut ws_stream = ExchangeWsStream::new(binance_conn, transformer);
 
-    // Receive a stream of your desired Output data model from the ExchangeStream
+    // 从 ExchangeStream 接收所需输出数据模型的流
     while let Some(volume_result) = ws_stream.next().await {
         match volume_result {
             Ok(cumulative_volume) => {
-                // Do something with your data
+                // 对您的数据执行某些操作
                 println!("{cumulative_volume:?}");
             }
             Err(error) => {
-                // React to any errors produced by the internal transformation
+                // 响应内部转换产生的任何错误
                 eprintln!("{error}")
             }
         }
     }
 }
 
-/// Deserialize a `String` as the desired type.
+/// 将 `String` 反序列化为所需类型。
 fn de_str<'de, D, T>(deserializer: D) -> Result<T, D::Error>
 where
     D: de::Deserializer<'de>,
@@ -336,11 +336,10 @@ where
 }
 ```
 
-#### Parsing binary protobuf messages
+#### 解析二进制 protobuf 消息
 
-`WebSocketProtobufParser` can decode `WsMessage::Binary` payloads using [`prost`]. It can
-be used with `ExchangeStream` in place of `WebSocketSerdeParser` when servers send
-protobuf encoded messages.
+`WebSocketProtobufParser` 可以使用 [`prost`] 解码 `WsMessage::Binary` 负载。当服务器发送
+protobuf 编码消息时，可以在 `ExchangeStream` 中使用它来代替 `WebSocketSerdeParser`。
 
 ```rust
 use barter_integration::protocol::websocket::{WebSocket, WebSocketProtobufParser};
@@ -351,33 +350,36 @@ type ProtoStream<Exchange> = ExchangeStream<WebSocketProtobufParser, WebSocket, 
 
 [`prost`]: https://crates.io/crates/prost
 
-**For a larger, "real world" example, see the [`Barter-Data`] repository.**
+**有关更大的"真实世界"示例，请参阅 [`Barter-Data`] 仓库。**
 
-## Getting Help
-Firstly, see if the answer to your question can be found in the [API Documentation]. If the answer is not there, I'd be
-happy to help to [Chat] and try answer your question via Discord.
+## 获取帮助
 
-## Contributing
-Thanks for your help in improving the Barter ecosystem! Please do get in touch on the discord to discuss
-development, new features, and the future roadmap.
+首先，请查看[API 文档][API Documentation]中是否已有您问题的答案。如果找不到答案，我很乐意通过[聊天][Chat]在 Discord 上帮助您并尝试回答您的问题。
 
-## Related Projects
-In addition to the Barter-Integration crate, the Barter project also maintains:
-* [`Barter`]: High-performance, extensible & modular trading components with batteries-included. Contains a
-  pre-built trading Engine that can serve as a live-trading or backtesting system.
-* [`Barter-Data`]: A high-performance WebSocket integration library for streaming public data from leading 
-  cryptocurrency exchanges.
-* [`Barter-Execution`]: Financial exchange integrations for trade execution - yet to be released!
+## 贡献
 
-## Roadmap
-* Add new default StreamParser implementations to enable integration with other popular systems such as Kafka. 
+感谢您帮助改进 Barter 生态系统！请通过 Discord 联系我们，讨论开发、新功能和未来路线图。
 
-## Licence
-This project is licensed under the [MIT license].
+## 相关项目
+
+除了 Barter-Integration crate 之外，Barter 项目还维护：
+
+-   [`Barter`]：高性能、可扩展和模块化的交易组件，开箱即用。包含一个
+    预构建的交易引擎，可用作实盘交易或回测系统。
+-   [`Barter-Data`]：用于从领先的加密货币交易所流式传输公共数据的高性能 WebSocket 集成库。
+-   [`Barter-Execution`]：用于交易执行的金融交易所集成 - 尚未发布！
+
+## 路线图
+
+-   添加新的默认 StreamParser 实现，以支持与其他流行系统（如 Kafka）的集成。
+
+## 许可证
+
+本项目采用 [MIT 许可证][MIT license]。
 
 [MIT license]: https://gitlab.com/open-source-keir/financial-modelling/trading/barter-data-rs/-/blob/main/LICENSE
 
-### Contribution
-Unless you explicitly state otherwise, any contribution intentionally submitted
-for inclusion in Barter-Integration by you, shall be licensed as MIT, without any additional
-terms or conditions.
+### 贡献
+
+除非您明确声明，否则您有意提交以包含在 Barter-Integration 中的任何贡献均应
+采用 MIT 许可证，不提供任何附加条款或条件。
